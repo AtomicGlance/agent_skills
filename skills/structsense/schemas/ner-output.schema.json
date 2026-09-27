@@ -329,6 +329,16 @@
             "null"
           ],
           "description": "The broader extracted mention this one is a kind or part of (in-paper hierarchy, written as skos:broader)."
+        },
+        "referent_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Source-local homonym/coreference identity."
+        },
+        "identity_key": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(_[a-z0-9]+)*$",
+          "description": "Reviewed global identity, shared across sources."
         }
       },
       "additionalProperties": true
@@ -542,6 +552,16 @@
             "type": "object",
             "additionalProperties": true
           }
+        },
+        "referent_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Source-local homonym/coreference identity."
+        },
+        "identity_key": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(_[a-z0-9]+)*$",
+          "description": "Reviewed global identity, shared across sources."
         }
       },
       "additionalProperties": true

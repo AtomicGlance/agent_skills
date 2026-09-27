@@ -44,7 +44,8 @@
               "type": "object",
               "required": [
                 "predicate",
-                "target_key"
+                "target_key",
+                "evidence"
               ],
               "properties": {
                 "predicate": {
@@ -53,6 +54,33 @@
                 },
                 "target_key": {
                   "type": "string"
+                },
+                "evidence": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "negated": {
+                  "type": "boolean"
+                },
+                "modality": {
+                  "type": "string"
+                },
+                "time": {
+                  "type": "string"
+                },
+                "condition": {
+                  "type": "string"
+                },
+                "context": {
+                  "type": "string"
+                },
+                "start": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "end": {
+                  "type": "integer",
+                  "minimum": 0
                 }
               },
               "additionalProperties": false
@@ -88,6 +116,9 @@
           "note": {
             "type": "string",
             "description": "Optional explanation or caveat about the entity (written as rdfs:comment, never as its label)."
+          },
+          "evidence": {
+            "type": "string"
           }
         },
         "not": {

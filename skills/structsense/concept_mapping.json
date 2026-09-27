@@ -212,6 +212,37 @@
       "SWO",
       "EDAM",
       "STATO"
+    ],
+    "ModelSystem": [
+      "NCIT",
+      "SCIO"
+    ],
+    "ComputationalModel": [
+      "SWO",
+      "EDAM",
+      "OBI",
+      "SCIO"
+    ],
+    "MorphologicalPhenotype": [
+      "HP",
+      "MP",
+      "PATO"
+    ],
+    "CellularPhenotype": [
+      "HP",
+      "MP",
+      "PATO"
+    ],
+    "ClinicalPhenotype": [
+      "HP",
+      "MP",
+      "PATO"
+    ],
+    "CognitivePhenotype": [
+      "HP",
+      "NBO",
+      "COGAT",
+      "MF"
     ]
   },
   "match_type_tiers": {
@@ -327,11 +358,6 @@
       ],
       "Species": [
         "NCBITAXON"
-      ],
-      "Gene": [
-        "PR",
-        "NCIT",
-        "SO"
       ],
       "LineageMarker": [
         "PR",

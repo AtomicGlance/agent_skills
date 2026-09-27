@@ -160,11 +160,11 @@ def group_mentions_by_entity(
     for it in items:
         if not it.get(surface_key):
             continue
-        k = _canonical_key(it[surface_key], it.get(label_key))
+        k = (*_canonical_key(it[surface_key], it.get(label_key)), it.get("referent_id") or it.get("identity_key") or "")
         buckets[k].append(it)
 
     out: list[dict] = []
-    for (lower_form, label), mentions in buckets.items():
+    for (lower_form, label, referent), mentions in buckets.items():
         canonical = reading_form(_pick_canonical_surface([reading_form(m[surface_key]) for m in mentions]))
         best = _pick_best_alignment(mentions)
 
@@ -195,6 +195,8 @@ def group_mentions_by_entity(
                 "judge_score":    m.get("judge_score"),
                 "concept_mapping_provenance": m.get("concept_mapping_provenance"),
                 "alignment_method":           m.get("alignment_method"),
+                "relations": m.get("relations", []),
+                "cell_context": m.get("cell_context"),
             }
             for m in mentions
         ]
@@ -213,6 +215,7 @@ def group_mentions_by_entity(
             surface_key:    canonical,
             label_key:      label or None,
             "mention_count": len(mentions),
+            "referent_id": referent or None,
 
             "source_models":   source_models,
             "source_model_counts": dict(source_counts),
@@ -292,7 +295,7 @@ def unify_ontology_across_entities(entities: list[dict],
         surface = (ent.get(surface_key) or ent.get("term")
                    or ent.get("name") or "")
         key = (reading_form(str(surface)).lower(),
-               str(ent.get("label") or "").lower().strip())
+               str(ent.get("label") or "").lower().strip(), ent.get("referent_id") or ent.get("identity_key") or "")
         if not key[0]:
             continue
         s = _ontology_score(ent)
@@ -305,21 +308,21 @@ def unify_ontology_across_entities(entities: list[dict],
         surface = (ent.get(surface_key) or ent.get("term")
                    or ent.get("name") or "")
         key = (reading_form(str(surface)).lower(),
-               str(ent.get("label") or "").lower().strip())
+               str(ent.get("label") or "").lower().strip(), ent.get("referent_id") or ent.get("identity_key") or "")
         if key in best:
             ent.update(best[key])
 
     return entities
 
 
-def item_id(surface: str, label: Optional[str], kind: str = "entity") -> str:
+def item_id(surface: str, label: Optional[str], kind: str = "entity", referent_id: str = "") -> str:
     """The join key shared by the judges, kg_plan.json and json_to_ttl: "<entity>|<label>".
 
     A key term without a label is "<term>|KeyTerm" rather than "<term>|None".
     """
     if kind == "key_term" and not label:
         label = "KeyTerm"
-    return f"{surface}|{label}"
+    return f"{surface}|{label}" + (f"|referent={referent_id}" if referent_id else "")
 
 
 def mention_groups(result: dict) -> list[dict]:
@@ -346,30 +349,31 @@ def mention_groups(result: dict) -> list[dict]:
                     if it.get(surf):
                         items.append(it)
         for it in items:
-            buckets[(kind,) + _canonical_key(it[surf], it.get("label"))].append(it)
+            buckets[(kind,) + _canonical_key(it[surf], it.get("label")) + (it.get("referent_id") or it.get("identity_key") or "",)].append(it)
 
     def first_start(items: list[dict]) -> int:
         s = items[0].get("start")
         return s if isinstance(s, int) else 10 ** 12
 
     groups = []
-    for (kind, _lower, label), items in buckets.items():
+    for (kind, _lower, label, referent), items in buckets.items():
         surf = "entity" if kind == "entity" else "term"
         items.sort(key=lambda i: i.get("start") if isinstance(i.get("start"), int) else 10 ** 12)
         canonical = reading_form(_pick_canonical_surface([reading_form(i[surf]) for i in items]))
         groups.append({"kind": kind, "surface": canonical, "label": label or None,
-                       "id": item_id(canonical, label or None, kind),
+                       "id": item_id(canonical, label or None, kind, referent),
+                       "referent_id": referent or None,
                        "surf_key": surf, "items": items})
     groups.sort(key=lambda g: (first_start(g["items"]), g["id"]))
     return groups
 
 
-def attach_grouped_views(result: dict, *, unify_ontology: bool = True) -> dict:
+def attach_grouped_views(result: dict, *, unify_ontology: bool = False) -> dict:
     """Mutate ``result`` to add `entities_grouped` and `key_terms_grouped`.
 
     The original `entities` / `key_terms` lists (raw, one-per-mention) are
-    preserved as the authoritative record. When ``unify_ontology=True`` (the
-    default), we first normalize ontology fields across mentions of the same
+    preserved as the authoritative record. Mapping decisions stay contextual by
+    default. With explicit legacy ``unify_ontology=True``, normalize fields across
     (entity, label) so all occurrences share one consistent mapping (best one
     wins — tool-mapped beats LLM, real IRI beats placeholders).
     """

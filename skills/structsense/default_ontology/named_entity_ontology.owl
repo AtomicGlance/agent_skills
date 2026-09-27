@@ -650,7 +650,7 @@
   <rdf:Description rdf:about="https://brainkb.org/ner/pmcid">
     <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#DatatypeProperty"/>
     <rdfs:label xml:lang="en">PMCID</rdfs:label>
-    <rdfs:domain rdf:resource="https://brainkb.org/ner/Publication"/>
+    <rdfs:domain rdf:resource="https://brainkb.org/ner/SourceDocument"/>
     <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
   </rdf:Description>
   <rdf:Description rdf:about="https://brainkb.org/ner/causal-modality/hypothetical">
@@ -800,7 +800,7 @@
   <rdf:Description rdf:about="https://brainkb.org/ner/pmid">
     <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#DatatypeProperty"/>
     <rdfs:label xml:lang="en">PMID</rdfs:label>
-    <rdfs:domain rdf:resource="https://brainkb.org/ner/Publication"/>
+    <rdfs:domain rdf:resource="https://brainkb.org/ner/SourceDocument"/>
     <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
   </rdf:Description>
   <rdf:Description rdf:about="https://brainkb.org/ner/GeographicLocation">
@@ -942,8 +942,8 @@
     <rdfs:label xml:lang="en">Named Entity Ontology</rdfs:label>
     <dcterms:description xml:lang="en">Version 2.2 adds a first-class causality module for relation extraction. It represents source-anchored causal relation mentions, canonical causal relations, cause/effect/mediator/moderator/confounder roles, polarity, directness, modality, causal evidence basis, mechanisms, context, quantitative effect estimates, mapping to external causal predicates, provenance, and temporal evolution. Causal and associative relations are explicitly separated.</dcterms:description>
     <dcterms:description xml:lang="en">Version 2.3 repairs the remaining local class disconnection in the causality module and guarantees that all locally defined OWL classes are connected to the NamedEntityElement root. Integration with the Assertion–Evidence ontology is provided by a separate bridge ontology.</dcterms:description>
-    <owl:versionInfo>2.4.0</owl:versionInfo>
-    <owl:versionIRI rdf:resource="https://brainkb.org/ner/2.4.0/"/>
+    <owl:versionInfo>2.5.0</owl:versionInfo>
+    <owl:versionIRI rdf:resource="https://brainkb.org/ner/2.5.0/"/>
     <dcterms:created rdf:datatype="http://www.w3.org/2001/XMLSchema#date">2026-09-24</dcterms:created>
     <dcterms:creator>BrainKB</dcterms:creator>
     <dcterms:relation rdf:resource="https://brainkb.org/assertion-evidence/"/>
@@ -1115,7 +1115,7 @@
   <rdf:Description rdf:about="https://brainkb.org/ner/Publication">
     <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
     <rdfs:label xml:lang="en">Publication</rdfs:label>
-    <rdfs:subClassOf rdf:resource="https://brainkb.org/ner/SourceArtifact"/>
+    <rdfs:subClassOf rdf:resource="https://brainkb.org/ner/SourceDocument"/>
   </rdf:Description>
   <rdf:Description rdf:about="https://brainkb.org/ner/StatisticalMethod">
     <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
@@ -1146,7 +1146,7 @@
     <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
     <rdfs:label xml:lang="en">Named Entity</rdfs:label>
     <rdfs:subClassOf rdf:resource="https://brainkb.org/ner/AnnotationArtifact"/>
-    <skos:definition xml:lang="en">A canonical corpus-level entity represented by one or more entity mentions and eligible for alignment to one or more external ontology concepts.</skos:definition>
+    <skos:definition xml:lang="en">A resolved referent with a stable canonical identity across sources. All occurrences of that referent in every source link to one entity IRI. Source provenance belongs to mentions and assertions; equal labels alone do not establish identity. Mentions, classifications and external ontology concepts are distinct records.</skos:definition>
     <owl:disjointWith rdf:resource="https://brainkb.org/ner/OntologyConcept"/>
   </rdf:Description>
   <rdf:Description rdf:about="https://brainkb.org/ner/GeneFamily">
@@ -2229,7 +2229,7 @@
   <rdf:Description rdf:about="https://brainkb.org/ner/doi">
     <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#DatatypeProperty"/>
     <rdfs:label xml:lang="en">DOI</rdfs:label>
-    <rdfs:domain rdf:resource="https://brainkb.org/ner/Publication"/>
+    <rdfs:domain rdf:resource="https://brainkb.org/ner/SourceDocument"/>
     <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
   </rdf:Description>
   <rdf:Description rdf:about="https://brainkb.org/ner/partOfDocumentPart">
@@ -2567,7 +2567,7 @@
   <rdf:Description rdf:about="https://brainkb.org/ner/publicationDate">
     <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#DatatypeProperty"/>
     <rdfs:label xml:lang="en">publication date</rdfs:label>
-    <rdfs:domain rdf:resource="https://brainkb.org/ner/Publication"/>
+    <rdfs:domain rdf:resource="https://brainkb.org/ner/SourceDocument"/>
     <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#date"/>
     <rdfs:comment xml:lang="en">Date (or year-precision date, e.g. 2026-01-01) the publication was issued. Instances SHOULD also mirror the value as dcterms:issued (xsd:gYear or xsd:date) for interoperability.</rdfs:comment>
     <rdfs:seeAlso rdf:resource="http://purl.org/dc/terms/issued"/>
@@ -2589,7 +2589,7 @@
     <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/>
     <rdfs:label xml:lang="en">version of document</rdfs:label>
     <rdfs:domain rdf:resource="https://brainkb.org/ner/DocumentVersion"/>
-    <rdfs:range rdf:resource="https://brainkb.org/ner/Publication"/>
+    <rdfs:range rdf:resource="https://brainkb.org/ner/SourceDocument"/>
     <owl:inverseOf rdf:resource="https://brainkb.org/ner/hasDocumentVersion"/>
   </rdf:Description>
   <rdf:Description rdf:about="https://brainkb.org/ner/causalDirectness">
@@ -2779,7 +2779,7 @@
   <rdf:Description rdf:about="https://brainkb.org/ner/hasDocumentVersion">
     <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/>
     <rdfs:label xml:lang="en">has document version</rdfs:label>
-    <rdfs:domain rdf:resource="https://brainkb.org/ner/Publication"/>
+    <rdfs:domain rdf:resource="https://brainkb.org/ner/SourceDocument"/>
     <rdfs:range rdf:resource="https://brainkb.org/ner/DocumentVersion"/>
     <rdfs:subPropertyOf rdf:resource="http://purl.org/dc/terms/hasVersion"/>
   </rdf:Description>
@@ -3765,7 +3765,7 @@
   <rdf:Description rdf:about="https://brainkb.org/ner/title">
     <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#DatatypeProperty"/>
     <rdfs:label xml:lang="en">title</rdfs:label>
-    <rdfs:domain rdf:resource="https://brainkb.org/ner/Publication"/>
+    <rdfs:domain rdf:resource="https://brainkb.org/ner/SourceDocument"/>
     <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
   </rdf:Description>
   <rdf:Description rdf:about="https://brainkb.org/ner/category/Disease">
@@ -4132,4 +4132,23 @@
     <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/>
     <rdfs:isDefinedBy rdf:resource="http://www.w3.org/ns/prov-o#"/>
   </rdf:Description>
+<rdf:Description rdf:about="https://brainkb.org/ner/SourceDocument"><rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/><rdfs:label>Source Document</rdfs:label><rdfs:subClassOf rdf:resource="https://brainkb.org/ner/SourceArtifact"/><skos:definition>A source of unstructured content, including an article, note, message, transcript, web page or report. Publication is an optional specialization; a DOI is not required.</skos:definition></rdf:Description>
+<rdf:Description rdf:about="https://brainkb.org/ner/RelationAssertion"><rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/><rdfs:label>Relation Assertion</rdfs:label><rdfs:subClassOf rdf:resource="https://brainkb.org/ner/AnnotationArtifact"/><skos:definition>An evidence-supported, source-scoped statement between two normalized entities. Each supporting occurrence retains its quote, mention and qualifiers. Negated or conditional statements do not entail an unqualified relation edge.</skos:definition></rdf:Description>
+<rdf:Description rdf:about="https://brainkb.org/ner/refersToEntity"><rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/><rdfs:label>refers to entity</rdfs:label><rdfs:domain rdf:resource="https://brainkb.org/ner/EntityMention"/><rdfs:range rdf:resource="https://brainkb.org/ner/NamedEntity"/></rdf:Description>
+<rdf:Description rdf:about="https://brainkb.org/ner/hasRelationAssertion"><rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/><rdfs:label>has relation assertion</rdfs:label><rdfs:domain rdf:resource="https://brainkb.org/ner/NamedEntity"/><rdfs:range rdf:resource="https://brainkb.org/ner/RelationAssertion"/></rdf:Description>
+<rdf:Description rdf:about="https://brainkb.org/ner/assertionSubject"><rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/><rdfs:label>assertion subject</rdfs:label><rdfs:domain rdf:resource="https://brainkb.org/ner/RelationAssertion"/><rdfs:range rdf:resource="https://brainkb.org/ner/NamedEntity"/></rdf:Description>
+<rdf:Description rdf:about="https://brainkb.org/ner/assertionObject"><rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/><rdfs:label>assertion object</rdfs:label><rdfs:domain rdf:resource="https://brainkb.org/ner/RelationAssertion"/><rdfs:range rdf:resource="https://brainkb.org/ner/NamedEntity"/></rdf:Description>
+<rdf:Description rdf:about="https://brainkb.org/ner/assertionPredicate"><rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/><rdfs:label>assertion predicate</rdfs:label><rdfs:domain rdf:resource="https://brainkb.org/ner/RelationAssertion"/><rdfs:range rdf:resource="http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"/></rdf:Description>
+<rdf:Description rdf:about="https://brainkb.org/ner/hasEvidenceMention"><rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/><rdfs:label>has evidence mention</rdfs:label><rdfs:domain rdf:resource="https://brainkb.org/ner/RelationAssertion"/><rdfs:range rdf:resource="https://brainkb.org/ner/EntityMention"/></rdf:Description>
+<rdf:Description rdf:about="https://brainkb.org/ner/sourceIdentifier"><rdf:type rdf:resource="http://www.w3.org/2002/07/owl#DatatypeProperty"/><rdfs:label>source identifier</rdfs:label><rdfs:domain rdf:resource="https://brainkb.org/ner/SourceDocument"/><rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/></rdf:Description>
+<rdf:Description rdf:about="https://brainkb.org/ner/mentionCount"><rdf:type rdf:resource="http://www.w3.org/2002/07/owl#DatatypeProperty"/><rdfs:label>mention count</rdfs:label><rdfs:domain rdf:resource="https://brainkb.org/ner/NamedEntity"/><rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#nonNegativeInteger"/></rdf:Description>
+<rdf:Description rdf:about="https://brainkb.org/ner/evidenceText"><rdf:type rdf:resource="http://www.w3.org/2002/07/owl#DatatypeProperty"/><rdfs:label>evidence text</rdfs:label><rdfs:domain rdf:resource="https://brainkb.org/ner/RelationAssertion"/><rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/></rdf:Description>
+<rdf:Description rdf:about="https://brainkb.org/ner/assertionNegated"><rdf:type rdf:resource="http://www.w3.org/2002/07/owl#DatatypeProperty"/><rdfs:label>assertion negated</rdfs:label><rdfs:domain rdf:resource="https://brainkb.org/ner/RelationAssertion"/><rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#boolean"/></rdf:Description>
+<rdf:Description rdf:about="https://brainkb.org/ner/assertionModality"><rdf:type rdf:resource="http://www.w3.org/2002/07/owl#DatatypeProperty"/><rdfs:label>assertion modality</rdfs:label><rdfs:domain rdf:resource="https://brainkb.org/ner/RelationAssertion"/><rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/></rdf:Description>
+<rdf:Description rdf:about="https://brainkb.org/ner/assertionContext"><rdf:type rdf:resource="http://www.w3.org/2002/07/owl#DatatypeProperty"/><rdfs:label>assertion context</rdfs:label><rdfs:domain rdf:resource="https://brainkb.org/ner/RelationAssertion"/><rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/></rdf:Description>
+<rdf:Description rdf:about="https://brainkb.org/ner/employedBy"><rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/><rdfs:label>employed by</rdfs:label><rdfs:domain rdf:resource="https://brainkb.org/ner/NamedEntity"/><rdfs:range rdf:resource="https://brainkb.org/ner/NamedEntity"/></rdf:Description>
+<rdf:Description rdf:about="https://brainkb.org/ner/affiliatedWith"><rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/><rdfs:label>affiliated with</rdfs:label><rdfs:domain rdf:resource="https://brainkb.org/ner/NamedEntity"/><rdfs:range rdf:resource="https://brainkb.org/ner/NamedEntity"/></rdf:Description>
+<rdf:Description rdf:about="https://brainkb.org/ner/createdBy"><rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/><rdfs:label>created by</rdfs:label><rdfs:domain rdf:resource="https://brainkb.org/ner/NamedEntity"/><rdfs:range rdf:resource="https://brainkb.org/ner/NamedEntity"/></rdf:Description>
+<rdf:Description rdf:about="https://brainkb.org/ner/owns"><rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/><rdfs:label>owns</rdfs:label><rdfs:domain rdf:resource="https://brainkb.org/ner/NamedEntity"/><rdfs:range rdf:resource="https://brainkb.org/ner/NamedEntity"/></rdf:Description>
+<rdf:Description rdf:about="https://brainkb.org/ner/refersToEntity"><owl:inverseOf rdf:resource="https://brainkb.org/ner/hasMention"/></rdf:Description>
 </rdf:RDF>

@@ -15,8 +15,9 @@ optional) or a lexicon:
         {"entity": "IT", "label": "CellType", "only_in": ["IT neurons", "IT cells"]}],
      "items": [ {"entity": ..., "label": ..., "start": ..., "end": ...} ]}   # explicit
 
-Every other field on an entry (specificity, coordinated_elements, cell_context,
-relations, broader, ...) is copied to each of its mentions.
+Expansion creates candidate occurrences, not evidence for new claims. Contextual
+fields (relations, cell context, mappings, referent identity) stay on the grounded
+occurrence that supplied them; they are never copied throughout a document.
 
 Robustness, all learned on real PDFs: matching tolerates line wraps, NBSP and
 soft hyphens inside a surface and hyphenation across a line break
@@ -93,7 +94,7 @@ def sentence_spans(text: str) -> list[tuple[int, int]]:
 def section_starts(text: str) -> list[tuple[int, str]]:
     out, pos = [], 0
     for line in text.splitlines(keepends=True):
-        s = line.strip().lstrip("#").strip()
+        s = line.strip().lstrip("#").strip().strip("[]")
         m = HEADINGS.match(s) if s and len(s) < 70 else None
         if m:
             out.append((pos, m.group(1).strip().title()))
@@ -177,6 +178,21 @@ def expand(lexicon: dict, text: str, *, model: str = "unknown", keep_nested: boo
     T = Text(text)
     allow = {s.lower() for s in include_sections}
     skip_secs = OUT_OF_SCOPE - allow
+    # Only lexical detection hints can be propagated. Everything else belongs to
+    # an individual observation (notably relations and ontology decisions).
+    lexical_fields = {"entity", "label", "source_model"}
+    explicit = list(lex.get("items") or [])
+    for entry in lex.get("entries") or []:
+        if not isinstance(entry, dict):
+            continue
+        if isinstance(entry.get("start"), int) and isinstance(entry.get("end"), int):
+            explicit.append(entry)
+        elif entry.get("sentence") and entry.get("entity"):
+            # A unique quoted sentence can anchor a seed without numeric offsets.
+            sentence, surface = entry["sentence"], entry["entity"]
+            if text.count(sentence) == 1 and sentence.count(surface) == 1:
+                a = text.index(sentence) + sentence.index(surface)
+                explicit.append({**entry, "start": a, "end": a + len(surface)})
 
     def excluded(a: int, b: int) -> bool:
         if T.in_url(a, b):
@@ -197,6 +213,9 @@ def expand(lexicon: dict, text: str, *, model: str = "unknown", keep_nested: boo
     for e in seen_entries.values():
         surf = e["entity"].strip()
         if not surf:
+            continue
+        if e.get("referent_id") or e.get("identity_key"):
+            # Homonyms require an explicit mention-level assignment.
             continue
         flags = re.I if e.get("ignore_case") else 0
         # a citation number glued to a word still ends it ("microglia90", "DS8,9"), but a
@@ -232,25 +251,35 @@ def expand(lexicon: dict, text: str, *, model: str = "unknown", keep_nested: boo
     for a, b, e in kept:
         if (a, b, e["label"]) in seen:
             continue
-        it = {k: v for k, v in e.items() if k not in ("ignore_case", "only_in", "start", "end")}
+        it = {k: v for k, v in e.items() if k in lexical_fields}
         it.update({"entity": text[a:b], "label": e["label"], "start": a, "end": b,
                    "sentence": T.sentence(a, b), "paper_location": T.location(a)})
         it.setdefault("source_model", src)
         items.append(it)
         seen.add((a, b, e["label"]))
     ungrounded = []
-    for it in lex.get("items") or []:
+    by_span = {(it["start"], it["end"], it["label"]): it for it in items}
+    for it in explicit:
         a, b = it.get("start"), it.get("end")
         if not (isinstance(a, int) and isinstance(b, int) and text[a:b] == it.get("entity")):
             ungrounded.append(it.get("entity"))
             continue
-        if (a, b, it["label"]) in seen or excluded(a, b):
+        if excluded(a, b):
             continue
         it = dict(it)
         it.setdefault("sentence", T.sentence(a, b))
         it["paper_location"] = T.location(a)
         it.setdefault("source_model", src)
+        key = (a, b, it["label"])
+        if key in by_span:
+            current = by_span[key]
+            relations = current.get("relations", []) + it.get("relations", [])
+            current.update(it)
+            if relations:
+                current["relations"] = list({json.dumps(r, sort_keys=True): r for r in relations}.values())
+            continue
         items.append(it)
+        by_span[key] = it
         seen.add((a, b, it["label"]))
     items.sort(key=lambda x: (x["start"], x["end"]))
     hit_entries = {id(k[2]) for k in kept}

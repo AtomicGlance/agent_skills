@@ -7,7 +7,7 @@ prompts/kg-plan.md and schemas/kg-plan.schema.json). Writes `<stem>.ttl` typed
 against the Named Entity Ontology (default_ontology/named_entity_ontology.owl,
 namespace https://brainkb.org/ner/).
 
-What goes in (profile "full", the default):
+What goes in (profile "full", the optional audit view):
 
   spine        ner:Publication -> ner:DocumentVersion (checksum, mediaType,
                sourcePath); ner:NERExtractionActivity (prov:used docv,
@@ -32,8 +32,9 @@ What goes in (profile "full", the default):
                between entities, and the causal module (CausalRelation + Version +
                EffectEstimate + CausalChain).
 
-Profile "compact" keeps entities, mentions (surface, offsets, docv), mappings and
-kg_plan edges, and drops the annotation/review layer — for very large papers.
+Profile "compact" is the default: entities, mentions (surface, offsets, sentence,
+source version), mappings and evidence-bearing relations, without audit records.
+The CLI also writes entity-focused JSON and Turtle projections.
 
 Then gate the file:  python -m scripts.validate_ttl <stem>.ttl   (must exit 0)
 
@@ -521,10 +522,10 @@ class TurtleBuilder:
         self.EX = Namespace(f"{kb_ns.rstrip('/')}/{paper_slug}/")   # slug scheme only
         self.KB = Namespace(kb_ns if kb_ns.endswith("/") else kb_ns + "/")
         doi = re.sub(r"^(https?://(dx\.)?doi\.org/|doi:)", "", (result.get("source_metadata") or {}).get("doi") or "", flags=re.I)
-        self.paper_id = doi or paper_slug
-        # Two extractions of one paper (e.g. general NER and cns-cells) are different
-        # readings: their mentions, classifications and reviews must not share IRIs,
-        # or a store holding both merges them into one node with two labels.
+        self.paper_id = str(self.meta.get("source_id") or doi or self.meta.get("source_path")
+                            or self.meta.get("sha256") or source_checksum or paper_slug)
+        # Entities and source occurrences share identity across extraction variants.
+        # Annotation/classification/review records retain their separate readings.
         self.variant = extraction_variant(result, variant)
         from prefixes import PrefixRegistry
         self.registry = PrefixRegistry()
@@ -537,6 +538,9 @@ class TurtleBuilder:
         self.warnings: list[str] = []
         self.counts: dict[str, int] = defaultdict(int)
         self.entities_by_key: dict[str, dict] = {}
+        self.plan_key_aliases: dict[str, str] = {}
+        self.mention_nodes: dict[tuple, URIRef] = {}
+        self.item_mentions: dict[int, URIRef] = {}
         self.classifications: dict[str, URIRef] = {}  # reading -> shared EntityClassification
         self.coordinated: list[dict] = []  # coordinated spans, resolved into components after all entities
         self.entity_by_group_id: dict[str, dict] = {}
@@ -615,14 +619,17 @@ class TurtleBuilder:
     # ---- spine ------------------------------------------------------------
     def build_spine(self):
         EX = self.EX
-        self.pub, self.docv = self.mint("publication", "1"), self.mint("document_version", "1")
+        self.pub, self.docv = self.mint("publication", "1"), self.mint("document_version", self.checksum or self.meta.get("sha256") or "1")
         self.run, self.snapshot = self.mint("run", self.run_id), self.mint("snapshot", self.run_id)
         title = self.meta.get("paper_title") or self.meta.get("title")
         doi = (self.meta.get("doi") or "").strip()
         doi = re.sub(r"^(https?://(dx\.)?doi\.org/|doi:)", "", doi, flags=re.I)
 
-        self.add(self.pub, RDF.type, NER.Publication)
-        self.label(self.pub, title or f"publication {self.slug}")
+        self.add(self.pub, RDF.type, NER.SourceDocument)
+        if doi or self.meta.get("pmid") or self.meta.get("journal") or self.meta.get("source_type") == "publication":
+            self.add(self.pub, RDF.type, NER.Publication)
+        self.add(self.pub, NER.sourceIdentifier, self.lit(self.paper_id))
+        self.label(self.pub, title or f"source {self.slug}")
         if title:
             self.add(self.pub, NER.title, self.lit(title, XSD.string))
         if doi:
@@ -864,25 +871,31 @@ class TurtleBuilder:
 
     def derive_key(self, grp: dict) -> str:
         """normalizedEntityKey without a kg_plan entry (references/key-normalization.md):
-        1. the preferred label of the ONE trusted-ontology class the text denotes
-           (identity-strength match only — label, exact synonym, symbol);
-        2. else the preferred label of an identity-strength tool mapping;
-        3. else the algorithm, with the user's key_synonyms.json overrides.
-        So "SST-INs" and "somatostatin interneurons" key alike wherever an ontology
-        says they are one class, and nothing is merged on a weaker match."""
+        Resolve explicit identities and local homonyms first, then source-defined
+        aliases and context-reviewed exact mappings. Fall back to surface
+        normalization. A fresh lexical hit must not override contextual review."""
+        identities = {it.get("identity_key") for it in grp["items"] if it.get("identity_key")}
+        if len(identities) == 1:
+            return normalize_key(str(next(iter(identities))), {})
+        if grp.get("referent_id"):
+            # A local disambiguator is not a cross-source identity assertion.
+            scope = hashlib.sha256(self.paper_id.encode()).hexdigest()[:12]
+            return normalize_key(f"{grp['referent_id']}_{scope}", {})
         user = self.synonyms.get(fold(grp["surface"]))
         if user:
             return user
-        tm = self.trusted()
-        if tm is not None:
-            canon = tm.canonical_label(grp["surface"], grp["label"], self.IDENTITY_MATCH_TYPES)
-            if canon:
-                self.counts["keys_from_trusted_lexicon"] += 1
-                return normalize_key(canon, self.synonyms)
+        # Source-defined abbreviation aliases are evidence; a fresh dictionary
+        # lookup is not. Never undo a judge's rejected/broad mapping to merge keys.
+        if not hasattr(self, "_abbreviations"):
+            from concept_mapping import abbreviation_table
+            self._abbreviations = abbreviation_table(
+                [self.source_text] if self.source_text else
+                [it.get("sentence") for _, it in _raw_items(self.result)])
+        if grp["surface"] in self._abbreviations:
+            return normalize_key(self._abbreviations[grp["surface"]], self.synonyms)
         for it in grp["items"]:
             if (it.get("concept_mapping_provenance") == "tool" and it.get("ontology_label")
-                    and (it.get("ontology_match_type") in self.IDENTITY_MATCH_TYPES
-                         or it.get("mapping_tier") == "exactMatch")):
+                    and it.get("mapping_tier") == "exactMatch"):
                 self.counts["keys_from_mapping_label"] += 1
                 return normalize_key(it["ontology_label"], self.synonyms)
         return normalize_key(grp["surface"], self.synonyms)
@@ -891,18 +904,27 @@ class TurtleBuilder:
         for grp in groups:
             plan = self.plan_for(grp["id"])
             cls, class_note = self.resolve_class(grp["label"], grp["kind"], plan)
-            from_plan = bool(plan.get("normalized_key"))
+            from_plan = bool(plan.get("normalized_key")) or len({it.get("identity_key") for it in grp["items"] if it.get("identity_key")}) == 1
             key = plan.get("normalized_key") or self.derive_key(grp)
             if from_plan:
                 key = rejoin_wrapped(key, grp)
             if not key:
                 key = f"{fold(self.slug)}_{slugify(grp['surface']).replace('-', '_')}"
-            if not from_plan and key in self.cfg.generic_keys:
+            general_labels = set(self.label_map.get("general_domain_labels") or [])
+            reviewed_exact = any(it.get("concept_mapping_provenance") == "tool" and
+                                 it.get("mapping_tier") == "exactMatch" for it in grp["items"])
+            if not from_plan and not reviewed_exact and grp["label"] in general_labels:
+                # A bare name in a note is not proof of global identity. A reviewed
+                # plan/identity_key later removes this source-local qualification.
+                scope = hashlib.sha256(self.paper_id.encode()).hexdigest()[:12]
+                key = f"{key}_{class_snake(cls)}_{scope}"
+            if key in self.cfg.generic_keys:
                 # A generic referent is paper-local until someone says otherwise; a
                 # missed merge is recoverable, a wrong merge is not.
                 new = f"{fold(self.slug)}_{key}"
                 self.warnings.append(f"generic key {key!r} for {grp['id']!r} qualified as {new!r} "
                                      f"(set normalized_key in kg_plan to fix)")
+                self.plan_key_aliases[key] = new
                 key = new
             ent = self.entities_by_key.get(key)
             if ent and not from_plan and cls not in ent["classes"] and not ent["from_plan"]:
@@ -953,9 +975,18 @@ class TurtleBuilder:
 
     def emit_mention(self, ent: dict, grp: dict, it: dict, n: int):
         EX = self.EX
-        m = self.mint("mention", f"{ent['key']}|{n}")
         surface = it.get(grp["surf_key"]) or grp["surface"]
+        a, b = it.get("start"), it.get("end")
+        occurrence = (ent["key"], a, b) if isinstance(a, int) and isinstance(b, int) else (ent["key"], "unanchored", n)
+        m = self.mention_nodes.get(occurrence)
+        if m is not None:
+            self.item_mentions[id(it)] = m
+            return
+        m = self.mint("mention", str(self.docv) + "|" + "|".join(map(str, occurrence)))
+        self.mention_nodes[occurrence] = m
+        self.item_mentions[id(it)] = m
         self.add(ent["node"], NER.hasMention, m)
+        self.add(m, NER.refersToEntity, ent["node"])
         self.add(m, RDF.type, NER.EntityMention)
         self.add(m, NER.surfaceForm, self.lit(surface, XSD.string))
         self.label(m, reading_form(surface))  # surfaceForm above stays byte-exact for the offsets
@@ -972,15 +1003,15 @@ class TurtleBuilder:
             self.add(m, NER.coordinatedElementCount, self.lit(len(slots), XSD.positiveInteger))
             self.coordinated.append({"ent": ent, "mention": m, "n": n, "surface": surface,
                                      "item": it, "slots": slots, "agent": agent})
-        if self.profile != "full":
-            return
         sent = self.mention_sentence(it, surface)
         if sent:
             self.add(m, NER.inSentence, self.sentence_node(sent))
         loc = it.get("paper_location")
         if loc:
             self.add(m, NER.inSection, self.section_node(str(loc)))
-        av = self.mint("annotation_version", f"{ent['key']}|{n}|1")
+        if self.profile != "full":
+            return
+        av = self.mint("annotation_version", f"{ent['key']}|{a}|{b}|{grp['id']}|1")
         self.add(av, RDF.type, NER.EntityAnnotationVersion)
         self.label(av, "annotation v1")
         self.add(av, NER.annotationOfMention, m)
@@ -1008,7 +1039,7 @@ class TurtleBuilder:
             cl = self.mint("classification", reading)
             self.classifications[reading] = cl
             self.add(cl, RDF.type, NER.EntityClassification)
-            self.label(cl, raw + (f" ({spec})" if spec else ""))  # rdf:type already says "classification"
+            self.label(cl, f"{ent['label']} — {raw} classification" + (f" ({spec})" if spec else ""))  # rdf:type already says "classification"
             self.add(cl, NER.classifiedAsClass, NER[cls])
             self.add(cl, NER.classificationLabelRaw, self.lit(raw, XSD.string))
             if score is not None:
@@ -1106,7 +1137,7 @@ class TurtleBuilder:
 
     def sentence_node(self, text: str) -> URIRef:
         if text not in self.sentences:
-            node = self.mint("sentence", hashlib.sha1(text.encode()).hexdigest())
+            node = self.mint("sentence", str(self.docv) + "|" + hashlib.sha1(text.encode()).hexdigest())
             self.add(node, RDF.type, NER.Sentence)
             self.add(node, NER.sentenceText, self.lit(text, XSD.string))
             self.add(node, NER.partOfDocumentVersion, self.docv)
@@ -1116,7 +1147,7 @@ class TurtleBuilder:
 
     def section_node(self, label: str) -> URIRef:
         if label not in self.sections:
-            node = self.mint("section", label)
+            node = self.mint("section", str(self.docv) + "|" + label)
             self.add(node, RDF.type, NER.Section)
             self.add(node, NER.sectionLabel, self.lit(label, XSD.string))
             self.add(node, NER.partOfDocumentVersion, self.docv)
@@ -1640,7 +1671,7 @@ class TurtleBuilder:
     def by_key(self, key: Optional[str], ctx: str) -> Optional[URIRef]:
         if not key:
             return None
-        ent = self.entities_by_key.get(key)
+        ent = self.entities_by_key.get(self.plan_key_aliases.get(key, key))
         if ent is None:
             self.warnings.append(f"{ctx}: target key {key!r} matches no entity; edge skipped")
             return None
@@ -1652,30 +1683,56 @@ class TurtleBuilder:
             if ent is None:
                 self.warnings.append(f"kg_plan entry {gid!r} matches no extracted item; ignored")
                 continue
-            src = ent["node"]
-            for rel in plan.get("relations") or []:
-                pred_name = str(rel.get("predicate") or "")
-                pred = self.cfg.relations.get(pred_name) or self.cfg.relations_by_id.get(pred_name)
-                if pred is None:
-                    self.warnings.append(f"{gid}: predicate {pred_name!r} is not in the allowed "
-                                         f"relation_predicates of ttl_config.json {sorted(self.cfg.relations)}; skipped")
-                    continue
+            relations = list(plan.get("relations") or [])
+            if plan.get("broader_key"):
+                relations.append({"predicate": "broader", "target_key": plan["broader_key"],
+                                  "evidence": plan.get("evidence")})
+            for field, pred in (("related_keys", "related"), ("see_also_keys", "see_also"),
+                                ("uses_keys", "uses"), ("derived_from_keys", "derived_from")):
+                relations.extend({"predicate": pred, "target_key": k, "evidence": plan.get("evidence")}
+                                 for k in plan.get(field) or [])
+            extra = {"broader": SKOS.broader, "related": SKOS.related, "see_also": RDFS.seeAlso,
+                     "uses": PROV.used, "derived_from": PROV.wasDerivedFrom}
+            for rel in relations:
+                name = str(rel.get("predicate") or "")
+                pred = self.cfg.relations.get(name) or self.cfg.relations_by_id.get(name) or extra.get(name)
                 tgt = self.by_key(rel.get("target_key"), gid)
-                if tgt is not None and tgt != src:
-                    self.add(src, pred, tgt)
-                    self.counts["relations"] += 1
-            for field, pred in (("broader_key", SKOS.broader),):
-                tgt = self.by_key(plan.get(field), gid)
-                if tgt is not None and tgt != src:
-                    self.add(src, pred, tgt)
-                    self.counts["relations"] += 1
-            for field, pred in (("related_keys", SKOS.related), ("see_also_keys", RDFS.seeAlso),
-                                ("uses_keys", PROV.used), ("derived_from_keys", PROV.wasDerivedFrom)):
-                for k in plan.get(field) or []:
-                    tgt = self.by_key(k, gid)
-                    if tgt is not None and tgt != src:
-                        self.add(src, pred, tgt)
-                        self.counts["relations"] += 1
+                if pred is None or tgt is None or tgt == ent["node"]:
+                    continue
+                evidence = {"text": rel.get("evidence"), **{k: rel[k] for k in
+                            ("start", "end", "negated", "modality", "context", "time", "condition") if k in rel}}
+                self.emit_relation_assertion(ent["node"], pred, tgt, evidence)
+
+    def emit_relation_assertion(self, src, pred, tgt, evidence: dict):
+        quote = evidence.get("text") or ""
+        if not quote or (self.source_text and quote not in self.source_text):
+            self.warnings.append("relation omitted: missing or ungrounded evidence quote")
+            return
+        identity = json.dumps([str(src), str(pred), str(tgt), evidence], sort_keys=True, default=str)
+        node = self.mint("relation_assertion", identity)
+        self.add(node, RDF.type, NER.RelationAssertion)
+        self.label(node, f"{self.g.value(src, RDFS.label)} → {self.g.value(tgt, RDFS.label)}")
+        self.add(node, NER.assertionSubject, src)
+        self.add(node, NER.assertionPredicate, pred)
+        self.add(node, NER.assertionObject, tgt)
+        self.add(node, NER.evidenceText, self.lit(quote))
+        self.add(node, PROV.hadPrimarySource, self.pub)
+        self.add(src, NER.hasRelationAssertion, node)
+        negated = bool(evidence.get("negated"))
+        self.add(node, NER.assertionNegated, Literal(negated, datatype=XSD.boolean))
+        modality = str(evidence.get("modality") or "asserted")
+        self.add(node, NER.assertionModality, self.lit(modality))
+        for field in ("context", "time", "condition"):
+            if evidence.get(field) is not None:
+                self.add(node, NER.assertionContext, self.lit(f"{field}: {evidence[field]}"))
+        for mention in self.g.objects(src, NER.hasMention):
+            a = self.g.value(mention, NER.documentStartOffset)
+            b = self.g.value(mention, NER.documentEndOffset)
+            if a is not None and b is not None and int(a) == evidence.get("start") and int(b) == evidence.get("end"):
+                self.add(node, NER.hasEvidenceMention, mention)
+        if not negated and modality == "asserted" and not any(evidence.get(f) for f in ("context", "time", "condition")):
+            self.add(src, pred, tgt)
+        self.counts["relation_assertions"] += 1
 
     def build_extracted_claims(self) -> list[dict]:
         """Relations the EXTRACTOR stated (per-mention `relations` / `broader`, cns-cells
@@ -1702,7 +1759,8 @@ class TurtleBuilder:
             pred = SKOS.broader if r["predicate"] == "broader" else self.cfg.relations.get(r["predicate"])
             if pred is None:
                 continue
-            self.add(src["node"], pred, tgt["node"])
+            for evidence in r.get("evidence_records") or []:
+                self.emit_relation_assertion(src["node"], pred, tgt["node"], evidence)
             self.counts["extracted_relations"] += 1
             if self.profile == "full":  # the claims verdict on this edge hangs off its subject
                 for rv in self.reviews.get(r["id"].lower()) or []:
@@ -1934,13 +1992,16 @@ def sha256_of(path: Path) -> str:
 def result_to_ttl(result: dict, *, kg_plan: Optional[dict] = None,
                   ontology: Path = DEFAULT_ONTOLOGY, label_map: Path = DEFAULT_LABEL_MAP,
                   synonyms: Path = DEFAULT_SYNONYMS, paper_slug: Optional[str] = None,
-                  kb_ns: str = DEFAULT_KB_NS, profile: str = "full",
+                  kb_ns: str = DEFAULT_KB_NS, profile: str = "compact",
                   run_id: Optional[str] = None, checked_date: Optional[str] = None,
                   source_path: Optional[Path] = None,
                   media_type: Optional[str] = None,
                   ttl_config: Path = DEFAULT_TTL_CONFIG,
                   variant: Optional[str] = None) -> tuple[str, dict]:
     """Library entry point. Returns (turtle_text, report)."""
+    if source_path:
+        result = {**result, "source_metadata": {"source_path": str(Path(source_path).resolve()),
+                                                **(result.get("source_metadata") or {})}}
     cfg = TtlConfig(ttl_config)
     declared, onto_version = load_ontology_info(ontology)
     syn = load_json(synonyms, {}) or {}
@@ -1981,7 +2042,7 @@ def _main() -> int:
     ap.add_argument("--source", type=Path, help="source document, for its sha256 checksum")
     ap.add_argument("--out", type=Path, help="output .ttl (default <stem>.ttl)")
     ap.add_argument("--report", type=Path, help="write the conversion report JSON here")
-    ap.add_argument("--profile", choices=["full", "compact"], default="full")
+    ap.add_argument("--profile", choices=["full", "compact"], default="compact")
     ap.add_argument("--paper-slug", help="override the paper namespace slug")
     ap.add_argument("--kb-ns", default=DEFAULT_KB_NS, help="base for per-paper IRIs")
     ap.add_argument("--ontology", type=Path, default=DEFAULT_ONTOLOGY)
@@ -2020,6 +2081,8 @@ def _main() -> int:
         source_path=args.source, ttl_config=args.ttl_config, variant=args.variant)
     out = args.out or default_ttl_path(args.result)
     out.write_text(ttl)
+    from entity_view import write_entity_views
+    report.update(write_entity_views(ttl, out))
     if args.report:
         args.report.write_text(json.dumps(report, indent=2) + "\n")
     c = report["counts"]

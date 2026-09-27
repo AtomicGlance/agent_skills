@@ -388,7 +388,7 @@ def build_result(job: Job, text: str, chunks: list[dict]) -> dict:
                 ents = [{k: v for k, v in e.items() if k not in ("start", "end", "sentence")}
                         for e in ents or [] if isinstance(e, dict) and not str(e.get("entity", "")).startswith("[E")]
             entries.extend(anchor([e for e in ents or [] if isinstance(e, dict)], text, c["start"]))
-            kts.extend(anchor([k for k in obj.get("key_terms") or [] if isinstance(k, dict)], text, c["start"]))
+            kts.extend(anchor([k for k in (obj.get("missed_key_terms", obj.get("key_terms")) if sub == "recall" else obj.get("key_terms")) or [] if isinstance(k, dict)], text, c["start"]))
             causal.extend(cr for cr in obj.get("causal_relations") or [] if isinstance(cr, dict))
             for k, v in (obj.get("source_metadata") or {}).items():
                 if v and not meta.get(k):
@@ -441,13 +441,13 @@ def mask_chunk(text: str, chunk: dict, items: list[dict]) -> tuple[str, list[dic
     return "".join(out), [{"placeholder": f"[E{i}]", "entity": s} for s, i in list(legend.items())[:300]]
 
 
-def kg_plan_input(result: dict, max_items: int = 400) -> dict:
+def kg_plan_input(result: dict, max_items: Optional[int] = None) -> dict:
     from group_by_entity import mention_groups
     items = []
     groups = sorted(mention_groups(result), key=lambda g: -len(g["items"]))  # the most-used entities first
     for g in groups[:max_items]:
         it = g["items"][0]
-        items.append({"id": g["id"], "label": g["label"], "mentions": len(g["items"]),
+        items.append({"id": g["id"], "entity": g["surface"], "label": g["label"], "mentions": len(g["items"]),
                       "ontology_id": it.get("ontology_id") if it.get("concept_mapping_provenance") == "tool" else None,
                       "ontology_label": it.get("ontology_label"),
                       "sentences": list(dict.fromkeys(i.get("sentence") for i in g["items"] if i.get("sentence")))[:3]})
@@ -511,9 +511,11 @@ def finish(job: Job, result: dict, plan: Optional[dict]) -> dict:
     job.ttl.write_text(ttl)
     gate = validate_file(job.ttl)
     if gate["ok"]:
+        from entity_view import write_entity_views
+        views = write_entity_views(ttl, job.ttl)
         with contextlib.suppress(FileNotFoundError):
             job.ttl.with_suffix(".invalid.ttl").unlink()
-        return {"status": "done", "ttl": str(job.ttl), "triples": conv["triples"],
+        return {"status": "done", "ttl": str(job.ttl), **views, "triples": conv["triples"],
                 "mentions": conv["counts"].get("mentions", 0), "entities": conv["counts"].get("entities", 0),
                 "warnings": gate["warning_count"], "ended_at": utc_now()}
     bad = job.ttl.with_suffix(".invalid.ttl")
@@ -562,9 +564,10 @@ def advance(job: Job) -> Optional[dict]:
                 "retry_reason": previous_error(target),
                 "instructions": (
                     "Follow the prompt's System block on this chunk. Write its JSON (entities; key_terms; "
-                    "causal_relations) to `write`; offsets may be chunk-local. Name every distinct surface form "
-                    "+ label you see AT LEAST ONCE — scripts/expand_mentions.py finds every other occurrence, so "
-                    "do not spend output on repeats. Chunk 1: also fill source_metadata (paper_title, doi, year, "
+                    "optional causal_relations only if requested) to `write`; offsets may be chunk-local. Emit each "
+                    "occurrence with its own context, identity and evidence-bearing relations. Expansion can "
+                    "recover plain repeated surfaces but cannot recover context-specific claims. "
+                    "Chunk 1: also fill source_metadata (paper_title, doi, year, "
                     "journal, authors as [{name, orcid?}] in printed order) — only what the text states. "
                     "Skip references, acknowledgements, funding/grant numbers and author lists.")}
 
@@ -617,7 +620,8 @@ def advance(job: Job) -> Optional[dict]:
                                  "references/key-normalization.md — specific referents, never a generic key "
                                  "and never a paper/DOI prefix to dodge the guardrail (leave a generic "
                                  "mention's key out instead). normalized_label is a short NAME; explanations go "
-                                 "in `note`. Add the relations/broader/causal claims the paper states. "
+                                 "in `note`. Resolve entity identity first. Include only source-stated relations with verbatim evidence; "
+                                 "do not add causal chains unless requested. "
                                  "{} is valid.")}
     from judge_ensemble import sanitize_kg_plan
     plan = sanitize_kg_plan(plan)

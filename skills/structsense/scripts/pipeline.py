@@ -812,6 +812,8 @@ def _main():
                 for k, v in list(gate["violations"].items())[:5]:
                     print(f"  [{k}] {v[:3]}", file=sys.stderr)
                 continue
+            from entity_view import write_entity_views
+            write_entity_views(ttl, out_path)
             written.append(work_json)
             ttl_written.append(out_path)
             print(f"  {conv['triples']} triples; gate: VALID ({gate['warning_count']} warning(s))",

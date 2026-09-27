@@ -64,7 +64,7 @@ class Resolver:
     def __init__(self, result: dict):
         self.groups = mention_groups(result)
         self.by_surface: dict[str, list[dict]] = {}
-        self.by_sentence: dict[tuple[str, str], dict] = {}
+        self.by_sentence: dict[tuple[str, str], list[dict]] = {}
         for g in self.groups:
             for it in g["items"]:
                 surf = _norm(it.get(g["surf_key"]) or "")
@@ -74,7 +74,9 @@ class Resolver:
                 if g not in lst:
                     lst.append(g)
                 if it.get("sentence"):
-                    self.by_sentence.setdefault((surf, it["sentence"]), g)
+                    bucket = self.by_sentence.setdefault((surf, it["sentence"]), [])
+                    if g not in bucket:
+                        bucket.append(g)
 
     def group_of_item(self, item: dict, surf_key: str) -> Optional[dict]:
         key = _norm(item.get(surf_key) or "")
@@ -88,36 +90,42 @@ class Resolver:
         t = _norm(target)
         if not t:
             return None
-        if sentence and (t, sentence) in self.by_sentence and self.by_sentence[(t, sentence)] is not exclude:
-            return self.by_sentence[(t, sentence)]
+        local = [g for g in self.by_sentence.get((t, sentence), []) if g is not exclude]
+        if len(local) == 1:
+            return local[0]
         cands = [g for g in self.by_surface.get(t, []) if g is not exclude]
         if len(cands) == 1:
             return cands[0]
-        if len(cands) > 1:  # prefer the group with the most mentions (the paper's usage)
-            return max(cands, key=lambda g: len(g["items"]))
+        if len(cands) > 1:
+            return None  # frequency does not resolve a homonym
         # plural/singular tolerance ("basket cells" vs "basket cell")
         for alt in ({t[:-1]} if t.endswith("s") else {t + "s"}):
             cands = [g for g in self.by_surface.get(alt, []) if g is not exclude]
-            if cands:
-                return max(cands, key=lambda g: len(g["items"]))
+            if len(cands) == 1:
+                return cands[0]
         return None
 
 
 def extracted_claims(result: dict, ttl_config: Path = TTL_CONFIG) -> dict:
     """{"relations": [...], "causal_relations": [...], "unresolved": [...]} from the
     extractor's own relational output. Relations are deduplicated by
-    (src group, predicate, tgt group); each keeps the first sentence as evidence."""
+    (src group, predicate, tgt group); each keeps every distinct evidence occurrence and its qualifiers."""
     allowed = allowed_predicates(ttl_config)
     res = Resolver(result)
     rels: dict[tuple[str, str, str], dict] = {}
     unresolved: list[dict] = []
 
-    def add(src: dict, pred: str, target: str, sentence: Optional[str], origin: str):
+    def add(src: dict, pred: str, target: str, sentence: Optional[str], origin: str, item: dict, relation: Optional[dict] = None):
         if pred not in allowed:
             unresolved.append({"source": src["id"], "predicate": pred, "target": target,
                                "why": f"predicate not in ttl_config.json relation_predicates ({origin})"})
             return
-        tgt = res.resolve(target, sentence, exclude=src)
+        relation = relation or {}
+        if relation.get("target_referent_id"):
+            matches = [g for g in res.groups if g.get("referent_id") == relation["target_referent_id"]]
+            tgt = matches[0] if len(matches) == 1 else None
+        else:
+            tgt = res.resolve(target, sentence, exclude=src)
         if tgt is None:
             unresolved.append({"source": src["id"], "predicate": pred, "target": target,
                                "why": f"target is not an extracted mention in this paper ({origin})"})
@@ -125,23 +133,30 @@ def extracted_claims(result: dict, ttl_config: Path = TTL_CONFIG) -> dict:
         key = (src["id"], pred, tgt["id"])
         if key not in rels:
             rels[key] = {"id": f"{src['id']}--{pred}--{tgt['id']}", "source": src["id"],
-                         "predicate": pred, "target": tgt["id"], "evidence": sentence, "origin": origin}
+                         "predicate": pred, "target": tgt["id"], "evidence": sentence, "origin": origin,
+                         "evidence_records": []}
+        record = {"text": sentence, "start": item.get("start"), "end": item.get("end")}
+        for field in ("negated", "modality", "context", "time", "condition"):
+            if field in relation:
+                record[field] = relation[field]
+        if record not in rels[key]["evidence_records"]:
+            rels[key]["evidence_records"].append(record)
 
     for g in res.groups:
         for it in g["items"]:
             sent = it.get("sentence")
             for r in it.get("relations") or []:
                 if isinstance(r, dict) and r.get("predicate") and r.get("target"):
-                    add(g, str(r["predicate"]).strip(), str(r["target"]), r.get("evidence") or sent, "extraction")
+                    add(g, str(r["predicate"]).strip(), str(r["target"]), r.get("evidence") or sent, "extraction", it, r)
             if it.get("broader"):
-                add(g, HIERARCHY, str(it["broader"]), sent, "extraction")
+                add(g, HIERARCHY, str(it["broader"]), sent, "extraction", it)
             ctx = it.get("cell_context") or {}
             if isinstance(ctx, dict):
                 for field, pred in CELL_CONTEXT_PREDICATES.items():
                     vals = ctx.get(field)
                     for v in (vals if isinstance(vals, list) else [vals]):
                         if v:
-                            add(g, pred, str(v), sent, f"cell_context.{field}")
+                            add(g, pred, str(v), sent, f"cell_context.{field}", it)
 
     causal = []
     for n, cr in enumerate(result.get("causal_relations") or [], 1):

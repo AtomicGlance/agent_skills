@@ -9,18 +9,15 @@ downstream query.
 
 ## Algorithm
 
-A key given in kg_plan.json (prompts/kg-plan.md) always wins. Otherwise
-`scripts/json_to_ttl.py::derive_key` takes, in order:
+A reviewed key in kg_plan.json wins. Otherwise use an explicit identity_key,
+a source-local disambiguator (referent_id), a source-defined abbreviation,
+a context-reviewed exact mapping, or the surface-normalization algorithm.
+Do not perform a fresh trusted-lexicon lookup to override a rejected or broad
+mapping. The same resolved key yields one global IRI across sources; provenance
+remains on mentions/assertions. See entity-identity.md.
 
-1. **The trusted ontologies' preferred label** for the ONE class the entity's text
-   denotes (`concept_mapping.TrustedMapper.canonical_label`): identity-strength
-   matches only (label, exact synonym, symbol), within the label's route, never
-   when ambiguous. So "SST-INs", "somatostatin interneurons" and "sst GABAergic
-   interneuron" key alike wherever an ontology says they are one class — the
-   synonym table is the ontologies themselves, as exhaustive as priority.md makes it.
-2. **The preferred label of an identity-strength tool mapping** on the item.
-3. **The algorithm below** (steps 2–4), with `default_ontology/key_synonyms.json`
-   holding only user overrides for what no trusted ontology covers.
+Local synonym overrides apply only after explicit identity and homonym handling.
+Context-reviewed mappings can consolidate names; lexical matches alone cannot.
 
 A fallback key that lands on `generic_keys` (ttl_config.json) is qualified with the
 paper slug (`<paper>_neuron`) — kept paper-local rather than merged.
@@ -49,7 +46,7 @@ The steps a human (or the kg-plan author) applies:
    (`pdp` is a zebrafish structure; `prefrontal_cortex` is generic).
    Brain-region laterality, cortical layer, developmental stage: keep if the
    paper's claims depend on them.
-6. Apply the **synonyms**: the trusted ontologies' (step 1 above), then the user overrides in `default_ontology/key_synonyms.json`.
+6. Apply context-appropriate, reviewed **synonyms**, then the user overrides in `default_ontology/key_synonyms.json`.
    This is the shared mini-authority; additions are code-reviewed, versioned,
    and never removed (only redirected).
 

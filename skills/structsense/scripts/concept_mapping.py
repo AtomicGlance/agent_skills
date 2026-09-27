@@ -692,7 +692,7 @@ class ConceptMapper:
         kept = [p for p in route or [] if p.upper() not in absent]
         if kept:
             return kept
-        if route is not None and not route and label:  # an explicit [] route: never map this label
+        if route is not None and not kept and label:  # an explicit [] route: never map this label
             return []
         return remote.get("default_ontologies") or None
 
@@ -887,6 +887,10 @@ def abbreviation_table(texts) -> dict[str, str]:
     for t in texts:
         for m in _DEF.finditer(str(t or "")):
             lf, sf = m.group(1).strip(), m.group(2)
+            # Mixed-case two-letter physical symbols such as Rs do not follow
+            # initial-letter acronym rules (series resistance != resistance).
+            if len(sf) <= 2 and not sf.isupper():
+                continue
             if not any(ch.isupper() for ch in sf):
                 continue
             words = lf.split()

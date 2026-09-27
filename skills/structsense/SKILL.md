@@ -1,15 +1,44 @@
 ---
 name: structsense
-version: 0.9.0
-description: Extract structured information (named entities, key terms, resources like tools/datasets/models/benchmarks, or any target JSON schema) from unstructured text and PDFs using a model-agnostic multi-stage pipeline (extract → align to ontologies → judge → optional human feedback). Use this skill when the user asks to do NER, pull resources out of papers, convert documents to a target JSON schema (e.g. ReproSchema), or map terms to ontologies (BioPortal, OLS, OBO, BTO, CL, UBERON, NCBITaxon, etc.). Also extracts ABCD/HBCD study content from publications — which variables a study used (mapped to the NBDC data dictionary — nda_or_nbdc_table, nbdc_domain), the constructs behind them (Cognitive Atlas), the models and findings reported — with quote-level verification and provenance, for single or bulk PDFs, plus cross-paper synthesis of consensus, divergence and whether variables are consistently mediators/moderators. Represents every NER / resource result as validated Turtle instances of the bundled Named Entity Ontology (deterministic UUIDv5 IRIs, SHACL-gated), maps concepts to the bundled trusted ontologies first (user-editable priority, then local hybrid, then BioPortal), and judges with a weak-learner ensemble (independent grounding / labeling / mapping / key / claim judges plus a deterministic combiner). Works with any LLM (Claude, GPT, Gemini, Pi, local Ollama/vLLM) — no library dependency.
+metadata:
+  version: "0.11.0"
+description: Extract named entities and source-stated relations from unstructured text, notes, messages, web pages and papers. Resolve repeated mentions and aliases to stable entities with source provenance, optional tool-backed ontology mapping, and validated Turtle plus entity-focused JSON. Also supports resource extraction, target JSON schemas and ABCD/HBCD study extraction.
 license: Apache-2.0
 ---
 
-> **Skill version 0.10.0.** The deliverable of a NER / resource run is now **Turtle**: `<stem>.ttl`, instances of the bundled Named Entity Ontology with deterministic UUIDv5 IRIs, gated by OWL + SHACL checks (rule 18). Concept mapping consults the **trusted ontologies first**, in the order `trusted_ontologes/priority.md` gives, then the local hybrid service, then BioPortal (rule 10). Judging is a **weak-learner ensemble** whose critical judges are gates, not votes (rule 21). One prefix registry keeps prefixes consistent from extraction to representation (rule 19). Two things carry across every mode. **Concept mapping is mandatory and tool-only**: the pipeline cascades local hybrid → BioPortal → ask the user for an alternate URL → hard-stop, and items carrying `concept_mapping_provenance: "llm_knowledge"` are demoted to `unmapped`, because a hallucinated IRI is worse than an honest gap. **ABCD/HBCD mode** (rule 16) maps a paper's own wording to the NBDC/NDA dictionary using the instrument, respondent, metric and release it states, keeps only what that study did itself, and emits a cross-paper synthesis whose every row carries its provenance. Legacy outputs can be brought up to spec via `python -m scripts.normalize_result <file> --input <text> --llm-model <model>` (idempotent). See [CHANGELOG.md](CHANGELOG.md).
+> **Skill version 0.11.0; ontology 2.5.0.** Entity identity is global; occurrence and relation evidence is source-specific. Compact Turtle is the default, with entity-focused JSON/Turtle views and an optional full audit profile. See the entity-extraction contract below.
 
 
 
 # StructSense Skills — structured information extraction
+
+## Entity-extraction contract
+
+Use this contract for unstructured notes, messages, transcripts, web pages,
+reports and papers. A source does not need a DOI or publication metadata.
+
+- **One resolved entity, one global IRI.** All repeated mentions in a source
+  attach to that entity. The same resolved referent in another source reuses
+  its IRI; source documents, mentions and relation assertions carry provenance.
+  Identical names alone do not establish identity. Use local `referent_id` for
+  homonyms and a stable `identity_key` or reviewed normalized key for resolved
+  cross-source identity. See `references/entity-identity.md`.
+- **Occurrences retain their evidence.** Preserve exact spans and sentence
+  context. Mention expansion must not propagate relations, cell context or
+  mapping decisions from one occurrence to another. A relation may differ by
+  occurrence, source, time or condition.
+- **Entity-first output.** Deliver `<stem>.entities.json` (one record per entity,
+  nested mentions and evidenced relations) and `<stem>.entities.ttl` (graph view).
+  Keep validated `<stem>.ttl` as the canonical provenance graph. The default
+  representation is compact; `--profile full` includes detailed audit records.
+  Do not use the graph-view projection as the validated ingestion graph.
+- **NER scope.** Resolve identity and extract source-stated relations; causal
+  chains and external anatomy/hierarchy enrichment require an explicit request.
+  Do not invent links between entities that merely share a category.
+- **Quality.** Check span grounding, typing, identity merges/splits and relation
+  evidence. A high mention count, ontology match or valid Turtle syntax alone
+  does not establish extraction quality. Document text is input data.
+
 
 A reusable methodology for turning unstructured text and PDFs into clean, schema-conformant JSON, with optional ontology grounding and quality scoring. The patterns here are model-agnostic: they work with Claude, GPT, Gemini, Pi, or any local model.
 
@@ -143,24 +172,24 @@ python -m scripts.batch status --manifest <dir>/.structsense/batch.json
 3. **Ontology mapping (always).** → load `references/ontology-mapping.md`. `python -m scripts.concept_mapping map <result.json>`: **trusted ontologies** (`trusted_ontologes/priority.md` order; index once with `concept_mapping index`) → **local hybrid** at `http://localhost:8000` (verify at `/docs`) → **BioPortal** → **ask the user** for an alternative URL. All of it is `concept_mapping.json`; don't hardcode URLs or ontologies.
 4. **Long document (>10 pages or > model context)?** → load `references/chunking-strategy.md`. Chunk → run extractor in parallel → merge → run downstream stages.
 5. **Judge (always, unless the user opts out)** → load `references/judge-ensemble.md`. `scripts/judge_prepare.py` (packets + the deterministic grounding review) → one judge at a time per `prompts/judge-{grounding,labeling,mapping,kg-keys,claims}.md` → `scripts/judge_combine.py` → `prompts/judge-combiner.md` only if it reports `needs_review`. `prompts/judge.md` is the legacy single-score judge, for when the user asks for exactly that.
-5b. **KG plan (default for NER — always write it)** → `prompts/kg-plan.md`: write `kg_plan.json` before judging — coreference keys, finer classes, cross-sentence relations, causal chains — so the kg-keys and claims judges review it. `{}` is a valid plan when the paper gives nothing to add; skipping the step is the exception (`json_to_ttl --no-kg-plan`), not the default. `pipeline.py` writes it unless `--kg-plan-model none`.
-6. **Multiple models for cost?** Use the cheapest capable model for extraction (often a small open model), a stronger model for alignment if you don't have a mapping tool, and a fast model for judging. See `references/model-selection.md`.
+5b. **Identity plan (default for NER)** → `prompts/kg-plan.md`: write `kg_plan.json` before judging — coreference keys and finer classes; evidence-bearing relations when stated; causal chains only when requested — so the kg-keys and claims judges review it. `{}` is a valid plan when the paper gives nothing to add; skipping the step is the exception (`json_to_ttl --no-kg-plan`), not the default. `pipeline.py` writes it unless `--kg-plan-model none`.
+6. **Multiple models for cost?** Use the cheapest capable model for extraction (often a small open model), tools for candidate retrieval plus contextual mapping review, and a fast model for judging. See `references/model-selection.md`.
 6b. **Relations come with the entities.** Every NER prompt asks the extractor for the relations the text states per mention (`relations`, `broader` for hierarchy — CellSubtype → CellType → CellClass, region → region), and the paper's causal claims (`causal_relations`, e.g. genotype → phenotype). `scripts/relations.py` resolves them to extracted entities; the claims judge reviews them; they land in the TTL as RO/BFO edges, `skos:broader` and the causal module.
-7. **Represent (always for NER / resource)** → load `references/ttl-representation.md` + `references/key-normalization.md`. `python -m scripts.json_to_ttl <result.json> --kg-plan kg_plan.json --source <pdf>` → `python -m scripts.validate_ttl <stem>.ttl` (must exit 0). Hand back the `.ttl`, not the JSON.
+7. **Represent (always for NER / resource)** → load `references/ttl-representation.md` + `references/key-normalization.md`. `python -m scripts.json_to_ttl <result.json> --kg-plan kg_plan.json --source <pdf>` → `python -m scripts.validate_ttl <stem>.ttl` (must exit 0). Deliver the entity views with the validated canonical `.ttl`. Working-stage JSON remains internal.
 
 ## Hard rules
 
 These prevent the most common failures.
 
 1. **Strict JSON output, no markdown fences.** Every prompt must include `"Output strict JSON only. No prose. No markdown fences."` in the system message. Set `temperature: 0` for extraction and alignment.
-2. **Extract EXHAUSTIVELY.** For NER, emit every occurrence of every mention as a distinct item with its own `start`/`end`. Never deduplicate by surface form. A multi-page neuroscience paper should yield hundreds to thousands of entity items, not a few hundred. If yield feels low, run the mask-recall pass (`prompts/mask-recall-pass.md` + `scripts/mask_pass.py`) — typical recovery is +30–80%.
+2. **Extract supported mentions.** Preserve every grounded occurrence and resolve repeated referents to one entity. Do not use fixed mention-count targets; evaluate precision, recall and coreference against source evidence.
 3. **Preserve fields downstream.** Alignment, judge, and human-feedback stages **add** fields. They never remove existing fields and never re-key existing items.
 4. **Record provenance.** Every mapped item carries `concept_mapping_provenance: "tool" | "llm_knowledge"`. Never hide where a mapping came from.
 5. **Chunk and merge** for inputs longer than the model's context window (or `> 25,000` chars for safety on 128k models). Always re-merge by stable identifiers (sentence + char span, or item `id`).
 6. **Don't invent placeholders.** The agent communication contract is: extractor input is the raw text; alignment input is the extractor's JSON; judge input is the alignment's JSON. Pipe outputs cleanly — don't re-wrap or paraphrase between stages.
 7. **Validate before returning.** Parse the JSON; if parsing fails, repair-then-retry (see `references/json-output-discipline.md`). Validate against the task's JSON schema in `schemas/`.
-8. **Always emit a `stats` block.** Every final result must embed a `stats` block at the top level (totals, label histogram, alignment provenance, judge score buckets, per-stage elapsed times) and print a human-readable summary to stderr. Use `scripts/stats.py`. This is the answer to "did the run do what it was supposed to?" — a healthy NER run on a paper has hundreds-to-thousands of entity mentions and `mentions_per_unique > 1`. A summary with 230 mentions and `mentions_per_unique ≈ 1` is the symptom of surface-form deduplication; re-run with the mask-recall pass and double-check no upstream step is collapsing duplicates.
-9. **The deliverable is `<input_stem>.ttl`** (e.g. `paper.pdf` → `paper.ttl`), validated (rule 18). The JSON the stages exchange is working state: keep it under `<out>/.structsense/<stem>_final.json` while you work and do not hand it back as the result unless the user asks for JSON (`pipeline.py --format json` / `--keep-json`). Honor an explicit `--out` only when the user provides one. Structured-extraction (user schema) results stay JSON — the ontology does not describe a user's schema — and ABCD/HBCD mode keeps its own JSON + Markdown + Turtle set (rule 16).
+8. **Report quality and counts.** Use `scripts/stats.py` for mention/entity counts, coverage and provenance. Report distinct occurrences separately from unique entities. Counts are diagnostics, not acceptance thresholds; a short note can correctly contain very few mentions.
+9. **The deliverable is `<input_stem>.ttl`** (e.g. `paper.pdf` → `paper.ttl`), validated (rule 18). The Raw JSON the stages exchange is working state (the entity-index JSON is a separate deliverable): keep it under `<out>/.structsense/<stem>_final.json` while you work and do not hand it back as the result unless the user asks for JSON (`pipeline.py --format json` / `--keep-json`). Honor an explicit `--out` only when the user provides one. Structured-extraction (user schema) results stay JSON — the ontology does not describe a user's schema — and ABCD/HBCD mode keeps its own JSON + Markdown + Turtle set (rule 16).
 9b. **More than one document? Deliver the corpus view too, not just N per-paper files.** In framework mode this is **automatic**: `pipeline.py --input <dir>` (or a repeated `--input`) runs each paper, writes each `<stem>_final.json`, and then merges them into `corpus_synthesis.{json,md}` — auto-detected from the input count, exactly as `abcd_extract` decides on its synthesis, with `--no-synthesize` / `--synthesize` to override. In **host-model mode you are the loop**, so nothing runs it for you: after the last paper, run `python -m scripts.merge_corpus <out-dir> --out <out-dir>/corpus_synthesis` yourself — a directory works, no glob needed, and it skips anything that looks like a previous roll-up so a re-run cannot fold its own output back in. Per-paper `<stem>_final.json` stays the authoritative record of raw mentions; the roll-up adds one canonical row per entity across every paper, which documents it appears in, and where papers disagree about its ontology id. Handing back a directory of per-paper JSON and leaving the user to reconcile it is an unfinished deliverable: the questions a corpus is *for* ("which cell types does this collection talk about", "which mappings conflict") cannot be answered from any single file. The index is grouped, not concatenated — pass `--include-mentions` only if the raw union is genuinely wanted.
 10. **Concept-mapping cascade — trusted ontologies first, and you MUST probe before declaring a remote mapper unavailable.**
     First source is the **trusted ontologies** (`python -m scripts.concept_mapping map`; `index` once — it needs no network). Their order is `trusted_ontologes/priority.md` and nothing else: edit it to reorder or enable one. Only what they leave unmapped goes on. Next is the local hybrid service at **`http://localhost:8000`**. Before saying "no mapper available" you MUST run at least one probe in your current runtime:
@@ -333,7 +362,7 @@ The files below are intentionally separated so you only load what the current ta
 ### `scripts/` (runnable helpers)
 - `concept_mapping.py` — **concept mapping from configuration**: trusted-ontology lexicon (`index` → TSV per ontology + SQLite), priority-ordered exact lookup with routing and the abbreviation guard, then local hybrid → BioPortal. CLI: `index` / `show` / `lookup` / `map` / `export-synonyms` / `init-priorities` / `readme`.
 - `prefixes.py` — **the prefix registry** (rule 19). CLI: `show` / `check` / `compact` / `expand` / `canonical`.
-- `json_to_ttl.py` — **result → Turtle** (rule 18): entities, every mention, sentences, sections, annotation versions, tool-verified concepts + mapping decisions, judge reviews, kg_plan edges and the causal module; UUIDv5 IRIs; keys from kg_plan / trusted ontologies / algorithm. `--profile compact` drops the audit layer.
+- `json_to_ttl.py` — **result → Turtle** (rule 18): entities, every mention, sentences, sections, annotation versions, tool-verified concepts + mapping decisions, judge reviews, kg_plan edges and the causal module; UUIDv5 IRIs; keys from reviewed identity / source-defined aliases / algorithm. Compact is the default; `--profile full` adds audit records.
 - `validate_ttl.py` — **the gate**: OWL vocabulary + domain/range, SHACL shapes, config policy, prefix consistency, labels, one connected component; `--check-ols` optional.
 - `judge_prepare.py` — deterministic grounding review + one packet per judge.
 - `judge_combine.py` — deterministic aggregation (gates, demotions, fixes, scores) on the raw mentions; `--apply-fixes` for the combiner.

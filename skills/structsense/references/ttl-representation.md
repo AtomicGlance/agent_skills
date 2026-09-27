@@ -2,8 +2,9 @@
 
 **The result of a NER or resource run is Turtle: one `<stem>.ttl` per paper**,
 instances of the default ontology (the Named Entity Ontology,
-`default_ontology/named_entity_ontology.owl`, v2.4.0, namespace
-`https://brainkb.org/ner/`), gated by its SHACL shapes. JSON is not a deliverable:
+`default_ontology/named_entity_ontology.owl`, v2.5.0, namespace
+`https://brainkb.org/ner/`), gated by its SHACL shapes. Entity-focused `.entities.json` and `.entities.ttl`
+are companion views (see `entity-identity.md`). Raw working JSON is internal:
 the stages still hand each other JSON (extract → align → judge), but that is
 working state under `<out>/.structsense/`, kept only with `--keep-json`.
 
@@ -24,11 +25,11 @@ important string in the file (references/key-normalization.md).
 | class of each entity | `default_ontology/label_class_map.json` | label → most specific declared class; kg_plan may refine |
 | ontology concepts + skos tier | `json_to_ttl.py` | ONLY `concept_mapping_provenance: "tool"` (trusted ontologies first — `concept_mapping.py`); tier from kg_plan, then the mapping judge (pass → exactMatch), then how the tool matched (`match_type_tiers`), then closeMatch |
 | relations, hierarchy, causal claims | the **extractor** (per-mention `relations` / `broader`, cns-cells `cell_context`, document `causal_relations`) and kg_plan | resolved to entities by `scripts/relations.py`, reviewed by the claims judge, written by `json_to_ttl.py` |
-| normalized key (no kg_plan entry) | `json_to_ttl.py` | the preferred label of the ONE trusted-ontology class the text denotes; else of an exact tool mapping; else the algorithm (key-normalization.md) |
+| normalized key (no kg_plan entry) | `json_to_ttl.py` | a reviewed identity key, source-defined abbreviation or context-reviewed exact mapping; otherwise the algorithm (entity-identity.md) |
 | judge verdicts | `json_to_ttl.py` | every review → `ner:ReviewDecision` attributed to its judge |
 | normalized keys, finer classes, relations, causal claims | **you**, in `kg_plan.json` (prompts/kg-plan.md) | reviewed by the kg-keys and claims judges before conversion |
 
-Never write the Turtle by hand. A paper yields hundreds to thousands of mentions;
+Use the converter to write Turtle rather than constructing it manually;
 a converter gets every one of them structurally right, and the model's judgment
 is spent where a script cannot decide.
 
@@ -272,3 +273,7 @@ Pass `--ontology` (and a label map / shapes of your own) to both scripts, and
 provenance, tiers, gaps, labels — transfers as long as the ontology has the
 corresponding classes and properties; the validator tells you immediately
 where it does not.
+
+The default profile is compact. Use `--profile full` for audit records.
+SourceDocument covers arbitrary unstructured sources; Publication specializes it.
+RelationAssertion records retain each occurrence’s evidence and qualifiers.

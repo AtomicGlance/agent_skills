@@ -134,7 +134,8 @@ def build_packets(result: dict, text: str, *, kg_plan: Optional[dict], cfg: dict
         x_claims.append({"id": r["id"], "kind": "relation", "origin": r["origin"],
                          "claim": {"source": by_id[r["source"]]["surface"], "predicate": r["predicate"],
                                    "target": by_id[r["target"]]["surface"]},
-                         "sentences": [r["evidence"]] if r.get("evidence") else []})
+                         "sentences": list(dict.fromkeys(e["text"] for e in r.get("evidence_records", []) if e.get("text"))),
+                         "evidence_records": r.get("evidence_records", [])})
     for c in xc["causal_relations"]:
         claim = {k: v for k, v in c.items() if k not in ("id", "evidence", "origin")}
         claim["cause"], claim["effect"] = by_id[c["cause"]]["surface"], by_id[c["effect"]]["surface"]

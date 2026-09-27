@@ -1,6 +1,6 @@
 # ============================================================================
 # SHACL shapes for per-paper instance data of the Named Entity Ontology
-# (https://brainkb.org/ner/, named_entity_ontology.owl v2.3.0).
+# (https://brainkb.org/ner/, named_entity_ontology.owl v2.5.0).
 #
 # The OWL file says what terms exist and their domains/ranges; it cannot say
 # "an entity MUST have a mention" or "an external IRI MUST be backed by a
@@ -31,8 +31,8 @@
 
 nsh: a owl:Ontology ;
     rdfs:label "Named Entity Ontology — instance-data SHACL shapes" ;
-    owl:versionInfo "1.0.0" ;
-    rdfs:comment "Targets named_entity_ontology.owl 2.3.0. Validate with the ontology as ont_graph and inference='rdfs'." ;
+    owl:versionInfo "1.1.0" ;
+    rdfs:comment "Targets named_entity_ontology.owl 2.5.0. Validate with the ontology as ont_graph and inference='rdfs'." ;
     sh:declare [
         sh:prefix "ner" ; sh:namespace "https://brainkb.org/ner/"^^xsd:anyURI
     ] , [
@@ -48,7 +48,7 @@ nsh: a owl:Ontology ;
 # ---------------------------------------------------------------------------
 
 nsh:PublicationShape a sh:NodeShape ;
-    sh:targetClass ner:Publication ;
+    sh:targetClass ner:SourceDocument ;
     sh:property [
         sh:path ner:hasDocumentVersion ; sh:minCount 1 ; sh:class ner:DocumentVersion ;
         sh:message "A Publication needs at least one DocumentVersion — it is the hub every mention points back to." ] ;
@@ -61,7 +61,7 @@ nsh:PublicationShape a sh:NodeShape ;
 
 nsh:DocumentVersionShape a sh:NodeShape ;
     sh:targetClass ner:DocumentVersion ;
-    sh:property [ sh:path ner:versionOfDocument ; sh:minCount 1 ; sh:maxCount 1 ; sh:class ner:Publication ] ;
+    sh:property [ sh:path ner:versionOfDocument ; sh:minCount 1 ; sh:maxCount 1 ; sh:class ner:SourceDocument ] ;
     sh:property [ sh:path ner:mediaType ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path ner:checksum ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path rdfs:label ; sh:minCount 1 ] .
@@ -103,10 +103,10 @@ nsh:NamedEntityShape a sh:NodeShape ;
         sh:message "normalizedEntityKey is the ingestion merge handle: exactly one, lowercase ASCII, single underscores (references/key-normalization.md)." ] ;
     # The too-generic key list is policy, not structure: it lives in
     # default_ontology/ttl_config.json (generic_keys) and validate_ttl.py checks it.
-    sh:property [ sh:path ner:normalizedEntityLabel ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path ner:normalizedEntityLabel ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path rdfs:label ; sh:minCount 1 ] ;
     sh:property [
-        sh:path prov:hadPrimarySource ; sh:minCount 1 ; sh:class ner:Publication ;
+        sh:path prov:hadPrimarySource ; sh:minCount 1 ; sh:class ner:SourceDocument ;
         sh:message "Every entity links to its Publication (prov:hadPrimarySource) — the one-hop provenance shortcut." ] ;
     sh:property [ sh:path ner:resolvedToConcept ; sh:class ner:OntologyConcept ] .
 
@@ -324,7 +324,7 @@ nsh:CausalRelationShape a sh:NodeShape ;
     sh:property [ sh:path ner:hasConfounder ; sh:class ner:NamedEntity ] ;
     sh:property [ sh:path ner:hasCurrentCausalRelationVersion ; sh:minCount 1 ; sh:maxCount 1 ; sh:class ner:CausalRelationVersion ] ;
     sh:property [ sh:path rdfs:label ; sh:minCount 1 ] ;
-    sh:property [ sh:path prov:hadPrimarySource ; sh:minCount 1 ; sh:class ner:Publication ] ;
+    sh:property [ sh:path prov:hadPrimarySource ; sh:minCount 1 ; sh:class ner:SourceDocument ] ;
     sh:sparql [
         a sh:SPARQLConstraint ;
         sh:message "Cause and effect are the same entity ({?x})." ;
@@ -423,7 +423,7 @@ nsh:SnapshotTimeShape a sh:NodeShape ;
     sh:property [ sh:path prov:generatedAtTime ; sh:maxCount 1 ; sh:datatype xsd:dateTime ] .
 
 nsh:PublicationDateShape a sh:NodeShape ;
-    sh:targetClass ner:Publication ;
+    sh:targetClass ner:SourceDocument ;
     sh:property [ sh:path ner:publicationDate ; sh:maxCount 1 ; sh:datatype xsd:date ] .
 
 nsh:ChangeRecordShape a sh:NodeShape ;
@@ -498,3 +498,54 @@ nsh:CausalEndpointShape a sh:NodeShape ;
                 $this ner:hasMediator ?m .
                 { $this ner:hasCause ?m } UNION { $this ner:hasEffect ?m }
             }""" ] .
+
+# Entity identity is global; uniqueness and evidence are checked per source.
+nsh:UniqueEntityPerSourceShape a sh:NodeShape ;
+    sh:targetClass ner:NamedEntity ;
+    sh:sparql [ a sh:SPARQLConstraint ;
+        sh:message "Two entity nodes share one normalized identity key in this source." ;
+        sh:select """SELECT $this WHERE {
+            $this ner:normalizedEntityKey ?key ; prov:hadPrimarySource ?source .
+            ?other ner:normalizedEntityKey ?key ; prov:hadPrimarySource ?source .
+            FILTER ($this != ?other)
+        }""" ] .
+
+nsh:MentionOwnerShape a sh:NodeShape ;
+    sh:targetClass ner:EntityMention ;
+    sh:property [ sh:path [ sh:inversePath ner:hasMention ] ;
+        sh:minCount 1 ; sh:maxCount 1 ; sh:class ner:NamedEntity ;
+        sh:message "A mention belongs to exactly one normalized entity; repetitions are separate occurrences." ] ;
+    sh:property [ sh:path ner:refersToEntity ; sh:maxCount 1 ; sh:class ner:NamedEntity ] ;
+    sh:sparql [ a sh:SPARQLConstraint ;
+        sh:message "Mention owner and refersToEntity disagree." ;
+        sh:select """SELECT $this WHERE {
+            ?owner ner:hasMention $this . $this ner:refersToEntity ?entity .
+            FILTER (?owner != ?entity)
+        }""" ] ;
+    sh:sparql [ a sh:SPARQLConstraint ;
+        sh:message "Duplicate mention for the same entity, document version and character span." ;
+        sh:select """SELECT $this WHERE {
+            ?entity ner:hasMention $this, ?other .
+            $this ner:partOfDocumentVersion ?doc ; ner:documentStartOffset ?a ; ner:documentEndOffset ?b .
+            ?other ner:partOfDocumentVersion ?doc ; ner:documentStartOffset ?a ; ner:documentEndOffset ?b .
+            FILTER ($this != ?other)
+        }""" ] .
+
+nsh:RelationAssertionShape a sh:NodeShape ;
+    sh:targetClass ner:RelationAssertion ;
+    sh:property [ sh:path ner:assertionSubject ; sh:minCount 1 ; sh:maxCount 1 ; sh:class ner:NamedEntity ] ;
+    sh:property [ sh:path ner:assertionObject ; sh:minCount 1 ; sh:maxCount 1 ; sh:class ner:NamedEntity ] ;
+    sh:property [ sh:path ner:assertionPredicate ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] ;
+    sh:property [ sh:path ner:evidenceText ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] ;
+    sh:property [ sh:path prov:hadPrimarySource ; sh:minCount 1 ; sh:maxCount 1 ; sh:class ner:SourceDocument ] ;
+    sh:property [ sh:path ner:assertionNegated ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ;
+    sh:property [ sh:path ner:assertionModality ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:sparql [ a sh:SPARQLConstraint ;
+        sh:message "The evidence mention must belong to the subject and the assertion's source." ;
+        sh:select """SELECT $this WHERE {
+            $this ner:assertionSubject ?subject ; prov:hadPrimarySource ?source ; ner:hasEvidenceMention ?mention .
+            FILTER NOT EXISTS {
+                ?subject ner:hasMention ?mention .
+                ?mention ner:partOfDocumentVersion/ner:versionOfDocument ?source .
+            }
+        }""" ] .

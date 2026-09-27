@@ -55,7 +55,11 @@
     "member_of": "http://purl.obolibrary.org/obo/RO_0002350",
     "develops_from": "http://purl.obolibrary.org/obo/RO_0002202",
     "derives_from": "http://purl.obolibrary.org/obo/RO_0001000",
-    "in_taxon": "http://purl.obolibrary.org/obo/RO_0002162"
+    "in_taxon": "http://purl.obolibrary.org/obo/RO_0002162",
+    "employed_by": "https://brainkb.org/ner/employedBy",
+    "affiliated_with": "https://brainkb.org/ner/affiliatedWith",
+    "created_by": "https://brainkb.org/ner/createdBy",
+    "owns": "https://brainkb.org/ner/owns"
   },
   "obo_prefixes": [
     "UBERON",
@@ -166,15 +170,15 @@
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
   },
   "iri": {
-    "_comment": "How per-graph IRIs are minted. scheme 'uuid5': <base><uuid5(uuid5(NAMESPACE_URL, namespace_seed), name)>, deterministic \u2014 the same name always gives the same IRI, so a re-run reproduces the graph and the SAME entity in two papers gets the SAME IRI (merge without rewriting). 'global_names' are shared across papers; everything else uses 'paper_name' and is scoped to the paper. scheme 'slug' gives readable <base><paper>/<kind>-<slug> IRIs for debugging.",
+    "_comment": "Resolved entities have a global deterministic IRI by canonical identity key. Source documents, mentions and relation assertions carry provenance. Local homonyms remain separate until explicit coreference resolves them; never equate entities just because their display labels match.",
     "scheme": "uuid5",
     "base": "https://brainkb.org/kb/",
     "namespace_seed": "https://brainkb.org/kb/",
     "global_names": {
-      "entity": "entity|{key}",
       "concept": "concept|{iri}",
       "ontology": "ontology|{acronym}",
-      "agent": "agent|{key}"
+      "agent": "agent|{key}",
+      "entity": "entity|{key}"
     },
     "paper_name": "{kind}|{paper}|{variant}|{local}",
     "_paper": "{paper} is the DOI when the source has one, else the paper slug. {variant} is the extraction (task_type:ner_domain, e.g. 'ner:neuroscience', 'ner:cns-cells'; json_to_ttl --variant): two extractions of one paper are different readings, so their mentions, classifications, reviews and runs never share an IRI. paper_shared_kinds (the publication, its text, sentences, sections) are the same thing in every extraction and are shared.",
@@ -184,7 +188,8 @@
       "document_version",
       "sentence",
       "section",
-      "document_ingestion"
+      "document_ingestion",
+      "mention"
     ]
   },
   "relation_range_hints": {
