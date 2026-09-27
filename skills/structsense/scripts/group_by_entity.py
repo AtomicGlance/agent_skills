@@ -251,6 +251,57 @@ def unify_ontology_across_entities(entities: list[dict],
     return entities
 
 
+def item_id(surface: str, label: Optional[str], kind: str = "entity") -> str:
+    """The join key shared by the judges, kg_plan.json and json_to_ttl: "<entity>|<label>".
+
+    A key term without a label is "<term>|KeyTerm" rather than "<term>|None".
+    """
+    if kind == "key_term" and not label:
+        label = "KeyTerm"
+    return f"{surface}|{label}"
+
+
+def mention_groups(result: dict) -> list[dict]:
+    """Raw mentions bucketed by the same canonical key as `entities_grouped`, but
+    keeping the FULL raw items (not the slim grouped view), so callers can edit
+    them in place. Each group: {kind, surface, label, id, surf_key, items}.
+
+    Falls back to the grouped view's mentions when a result carries no raw list.
+    Ordered by first occurrence in the document, so ids and IRIs are stable.
+    """
+    buckets: dict[tuple[str, str, str], list[dict]] = defaultdict(list)
+    for kind, raw_key, grp_key, surf in (("entity", "entities", "entities_grouped", "entity"),
+                                          ("key_term", "key_terms", "key_terms_grouped", "term")):
+        raw = result.get(raw_key)
+        if raw:
+            items = [it for it in raw if it.get(surf)]
+        else:
+            items = []
+            for g in result.get(grp_key) or []:
+                for m in g.get("mentions") or [{}]:
+                    it = {k: v for k, v in g.items() if k not in ("mentions", "sentences")}
+                    it.update({k: v for k, v in m.items() if v is not None})
+                    if it.get(surf):
+                        items.append(it)
+        for it in items:
+            buckets[(kind,) + _canonical_key(it[surf], it.get("label"))].append(it)
+
+    def first_start(items: list[dict]) -> int:
+        s = items[0].get("start")
+        return s if isinstance(s, int) else 10 ** 12
+
+    groups = []
+    for (kind, _lower, label), items in buckets.items():
+        surf = "entity" if kind == "entity" else "term"
+        items.sort(key=lambda i: i.get("start") if isinstance(i.get("start"), int) else 10 ** 12)
+        canonical = _pick_canonical_surface([i[surf] for i in items])
+        groups.append({"kind": kind, "surface": canonical, "label": label or None,
+                       "id": item_id(canonical, label or None, kind),
+                       "surf_key": surf, "items": items})
+    groups.sort(key=lambda g: (first_start(g["items"]), g["id"]))
+    return groups
+
+
 def attach_grouped_views(result: dict, *, unify_ontology: bool = True) -> dict:
     """Mutate ``result`` to add `entities_grouped` and `key_terms_grouped`.
 
