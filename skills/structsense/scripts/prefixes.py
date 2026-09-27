@@ -102,18 +102,38 @@ class PrefixRegistry:
             self._add(prefix, ns, f"trusted:{src}")
 
     # -- queries -------------------------------------------------------------
-    def canonical(self, prefix: Optional[str]) -> Optional[str]:
+    def canonical(self, prefix: Optional[str], iri: Optional[str] = None) -> Optional[str]:
+        """Canonical spelling of a prefix; with `iri`, a prefix known only through a
+        namespace pattern (first seen in this IRI) is registered and returned."""
         if not prefix:
             return None
         hit = self._by_prefix.get(prefix.lower())
+        if not hit and iri:
+            self.compact(iri)
+            hit = self._by_prefix.get(prefix.lower())
         return hit[0] if hit else None
 
     def namespace(self, prefix: str) -> Optional[str]:
         hit = self._by_prefix.get(prefix.lower())
         return hit[1] if hit else None
 
+    def canonical_iri(self, iri: str) -> str:
+        """One term, one IRI. A BioPortal PURL for an ontology whose prefix is already
+        registered elsewhere (http://purl.bioontology.org/ontology/NCBITAXON/9443 while
+        NCBITaxon is the OBO namespace) is rewritten to that namespace, so the same
+        term from two mapping sources is the same concept node."""
+        if iri and iri.startswith("https://purl.obolibrary.org/obo/"):
+            iri = "http://" + iri[len("https://"):]  # OBO PURLs are canonically http
+        m = re.match(r"^http://purl\.bioontology\.org/ontology/([A-Za-z][A-Za-z0-9_.-]*)/(.+)$", iri or "")
+        if m:
+            hit = self._by_prefix.get(m.group(1).lower())
+            if hit and not hit[1].startswith("http://purl.bioontology.org/"):
+                return hit[1] + m.group(2)
+        return iri
+
     def compact(self, iri: str) -> Optional[tuple[str, str]]:
         """IRI -> (CURIE, canonical prefix), or None if no registered namespace holds it."""
+        iri = self.canonical_iri(iri)
         for ns, prefix in self._namespaces:
             if iri.startswith(ns) and len(iri) > len(ns):
                 return f"{prefix}:{iri[len(ns):]}", prefix

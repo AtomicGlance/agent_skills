@@ -235,6 +235,11 @@
       "_comment": "BioPortal's own PURLs for ontologies with no OBO PURL (MESH, SNOMEDCT, LNC, OMIM, MEDLINEPLUS, ...): the acronym is the prefix. A prefix that already names another namespace (e.g. an OBO one) is never reused.",
       "regex": "^http://purl\\.bioontology\\.org/ontology/([A-Za-z][A-Za-z0-9_.-]*)/",
       "prefix_group": 1
+    },
+    {
+      "_comment": "Any OBO PURL: the OBO prefix is the prefix (FBbi, CTO, ... not on the obo_prefixes list). OBO spelling is taken from the IRI itself.",
+      "regex": "^http://purl\\.obolibrary\\.org/obo/([A-Za-z][A-Za-z0-9]*)_",
+      "prefix_group": 1
     }
   ],
   "source_path": "name",

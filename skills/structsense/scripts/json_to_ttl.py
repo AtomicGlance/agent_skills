@@ -72,7 +72,7 @@ _SCRIPTS_DIR = Path(__file__).resolve().parent
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
-from group_by_entity import mention_groups  # noqa: E402
+from group_by_entity import mention_groups, reading_form  # noqa: E402
 
 SKILL_DIR = _SCRIPTS_DIR.parent
 ONTOLOGY_DIR = SKILL_DIR / "default_ontology"
@@ -310,6 +310,24 @@ def load_source_text(source_path: Optional[Path]) -> Optional[str]:
     return None
 
 
+def rejoin_wrapped(key: str, grp: dict) -> str:
+    """A kg_plan key copied from a line-wrapped surface ('neu_rons' for "neu-\nrons")
+    gets its fragments rejoined when the joined word is in the entity's reading form."""
+    words = set()
+    for it in grp.get("items") or []:
+        words.update(fold(reading_form(str(it.get(grp.get("surf_key") or "entity") or ""))).split("_"))
+    words.update(fold(grp.get("surface") or "").split("_"))
+    toks, out, i = key.split("_"), [], 0
+    while i < len(toks):
+        if i + 1 < len(toks) and toks[i] + toks[i + 1] in words and toks[i] not in words:
+            out.append(toks[i] + toks[i + 1])
+            i += 2
+        else:
+            out.append(toks[i])
+            i += 1
+    return "_".join(out)
+
+
 def extraction_variant(result: dict, explicit: Optional[str] = None) -> str:
     """Which extraction of the paper this is: 'ner:neuroscience', 'ner:cns-cells', ...
     Explicit > run_metadata.variant > task_type + ner_domain (run_metadata or top level)."""
@@ -349,6 +367,8 @@ def concept_ref(oid: str, ontology: Optional[str], cfg: TtlConfig,
     Prefix knowledge comes from ttl_config.json: `obo_prefixes` (OBO PURL space) and
     `curie_expansions` (other id spaces, used in both directions)."""
     oid = oid.strip()
+    if registry is not None and re.match(r"^https?://", oid):
+        oid = registry.canonical_iri(oid)  # BioPortal PURL of an OBO term -> the OBO IRI
     if registry is not None:
         if re.match(r"^https?://", oid):
             hit = registry.compact(oid)
@@ -465,6 +485,10 @@ class TurtleBuilder:
         self.result = result
         self.plan = kg_plan or {}
         self.plan_entities = _lower_index(self.plan.get("entities") or {})
+        # ids are built from the reading form ("neurons|CellType"); a plan written
+        # against a raw line-wrapped surface ("neu-\nrons|CellType") still applies
+        for k, v in list(self.plan_entities.items()):
+            self.plan_entities.setdefault(reading_form(k).lower(), v)
         self.label_map = label_map
         self.synonyms = synonyms
         self.declared = declared
@@ -850,6 +874,8 @@ class TurtleBuilder:
             cls, class_note = self.resolve_class(grp["label"], grp["kind"], plan)
             from_plan = bool(plan.get("normalized_key"))
             key = plan.get("normalized_key") or self.derive_key(grp)
+            if from_plan:
+                key = rejoin_wrapped(key, grp)
             if not key:
                 key = f"{fold(self.slug)}_{slugify(grp['surface']).replace('-', '_')}"
             if not from_plan and key in self.cfg.generic_keys:
@@ -913,7 +939,7 @@ class TurtleBuilder:
         self.add(ent["node"], NER.hasMention, m)
         self.add(m, RDF.type, NER.EntityMention)
         self.add(m, NER.surfaceForm, self.lit(surface, XSD.string))
-        self.label(m, surface)
+        self.label(m, reading_form(surface))  # surfaceForm above stays byte-exact for the offsets
         self.add(m, NER.partOfDocumentVersion, self.docv)
         start, end = it.get("start"), it.get("end")
         if isinstance(start, int) and isinstance(end, int) and 0 <= start < end:
@@ -1603,7 +1629,7 @@ class TurtleBuilder:
 
     def build_plan_edges(self):
         for gid, plan in (self.plan.get("entities") or {}).items():
-            ent = self.entity_by_group_id.get(gid.lower())
+            ent = self.entity_by_group_id.get(gid.lower()) or self.entity_by_group_id.get(reading_form(gid).lower())
             if ent is None:
                 self.warnings.append(f"kg_plan entry {gid!r} matches no extracted item; ignored")
                 continue

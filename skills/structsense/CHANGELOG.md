@@ -57,6 +57,20 @@ or config; SKILL.md rules 22–24 and "Corpus requests" say how to use them.
   MESH / SNOMEDCT / LNC / OMIM mappings are kept instead of dropped.
 - `batch retry <stem> --from-stage ttl` re-renders from the kept final JSON and
   kg_plan (metadata re-read), no re-extraction.
+- **Why papers came out `.invalid.ttl`** (7 of 12 in the first BICAN batch), fixed:
+  prefixes registered by a pattern in the converter were unknown to the validator;
+  BioPortal's `purl.bioontology.org/ontology/NCBITAXON/…` and `https://` OBO IRIs
+  now canonicalize to the OBO IRI (one term, one concept node across sources); any
+  OBO prefix is registered by pattern (FBbi, CTO, MFOEM …); a judge repeating an id
+  no longer fails the combine. All 12 re-render valid from their saved JSON.
+- **BioPortal precision.** Searches are scoped per label (`remote.label_ontologies`,
+  then label_routing, then `remote.default_ontologies`, never all of BioPortal; `[]`
+  routes skip remote search) and take the first of 5 hits the TTL can represent,
+  instead of hit 1 from LOINC/SNOMED/CRISP.
+- **PDF line wraps in names and keys.** `group_by_entity.reading_form` rejoins
+  "neu-\nrons" → "neurons" (real hyphens kept) for grouping, entity names, keys and
+  mention labels; `surfaceForm` stays byte-exact. Legacy kg_plan keys with wrap
+  fragments are rejoined.
 
 ## 0.9.0 — Turtle is the deliverable; trusted ontologies first; a judge panel, not a score
 

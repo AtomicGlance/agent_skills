@@ -259,7 +259,7 @@ def check_policy(data: rdflib.Graph, ns: str, ttl_config: Path, ont: Optional[di
         if iri is None or cid is None:
             continue
         prefix = str(cid).split(":", 1)[0]
-        canon = reg.canonical(prefix)
+        canon = reg.canonical(prefix, iri=str(iri))
         if canon is None:
             issues["conceptIdentifier prefix not in the prefix registry"].add(f"{cid}")
         elif canon != prefix:

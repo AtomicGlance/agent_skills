@@ -116,7 +116,7 @@ class BioPortalMapper:
     # Public API
     # ------------------------------------------------------------------
     def map_one(self, term: str, ontologies: Optional[Iterable[str]] = None,
-                max_results: int = 1) -> dict:
+                max_results: int = 1, accept=None) -> dict:
         """Map a single term. Returns the canonical mapping dict (with
         provenance) — `unmapped` when no results.
         """
@@ -130,7 +130,13 @@ class BioPortalMapper:
                 "ontology": None,
                 "concept_mapping_provenance": "unmapped",
             }
-        top = hits[0]
+        # the first hit the caller can represent (e.g. a namespace in the prefix
+        # registry), not blindly hit 1
+        top = next((h for h in hits if accept is None or accept(h.get("@id") or "")), None)
+        if top is None:
+            return {"term": term, "ontology_id": None, "ontology_label": None, "ontology": None,
+                    "concept_mapping_provenance": "unmapped",
+                    "rejected_hits": [h.get("@id") for h in hits[:5]]}
         return {
             "term": term,
             "ontology_id": top.get("@id"),
@@ -140,10 +146,10 @@ class BioPortalMapper:
         }
 
     def map_batch(self, terms: Iterable[str],
-                  ontologies: Optional[Iterable[str]] = None,
+                  ontologies: Optional[Iterable[str]] = None, accept=None,
                   max_results: int = 1) -> list[dict]:
         """Map a list of terms. Returns a parallel list of mapping dicts."""
-        return [self.map_one(t, ontologies, max_results) for t in terms]
+        return [self.map_one(t, ontologies, max_results, accept=accept) for t in terms]
 
     # ------------------------------------------------------------------
     # Helpers

@@ -204,6 +204,146 @@
   },
   "remote": {
     "local_hybrid_url": "http://localhost:8000",
-    "max_results": 1
+    "max_results": 5,
+    "_max_results": "Hits fetched per remote search; the first one in a representable namespace (prefix registry) is taken, not blindly hit 1.",
+    "label_ontologies": {
+      "_comment": "Remote-only routes (BioPortal acronyms) for labels label_routing leaves open, so a search never spans all of BioPortal. Does not affect trusted-ontology filtering.",
+      "Measurement": [
+        "STATO",
+        "PATO",
+        "OBI",
+        "NCIT",
+        "EFO"
+      ],
+      "StatisticalMethod": [
+        "STATO",
+        "OBI",
+        "NCIT"
+      ],
+      "Device": [
+        "OBI",
+        "NCIT",
+        "EFO"
+      ],
+      "Instrument": [
+        "OBI",
+        "NCIT",
+        "EFO"
+      ],
+      "Software": [
+        "SWO",
+        "EDAM",
+        "NCIT"
+      ],
+      "Tool": [
+        "SWO",
+        "EDAM",
+        "OBI"
+      ],
+      "Dataset": [
+        "IAO",
+        "EDAM",
+        "NCIT"
+      ],
+      "Stimulus": [
+        "CHEBI",
+        "OBI",
+        "NCIT",
+        "NBO"
+      ],
+      "ExperimentalCondition": [
+        "EFO",
+        "OBI",
+        "NCIT"
+      ],
+      "ImagingModality": [
+        "FBbi",
+        "OBI",
+        "NCIT",
+        "RADLEX"
+      ],
+      "Assay": [
+        "OBI",
+        "EFO",
+        "BAO"
+      ],
+      "Population": [
+        "NCIT",
+        "EFO",
+        "OBI"
+      ],
+      "StudyCohort": [
+        "NCIT",
+        "EFO",
+        "OBI"
+      ],
+      "CognitivePhenotype": [
+        "COGAT",
+        "HP",
+        "NBO",
+        "MF"
+      ],
+      "Phenotype": [
+        "HP",
+        "MP",
+        "PATO"
+      ],
+      "ElectrophysiologicalFeature": [
+        "NCIT",
+        "OBI",
+        "PATO",
+        "GO"
+      ],
+      "EphysProperty": [
+        "NCIT",
+        "OBI",
+        "PATO",
+        "GO"
+      ],
+      "Organism": [
+        "NCBITAXON"
+      ],
+      "Species": [
+        "NCBITAXON"
+      ],
+      "Gene": [
+        "PR",
+        "NCIT",
+        "SO"
+      ],
+      "LineageMarker": [
+        "PR",
+        "NCIT"
+      ],
+      "Protein": [
+        "PR",
+        "NCIT"
+      ]
+    },
+    "default_ontologies": [
+      "NCIT",
+      "OBI",
+      "EFO",
+      "GO",
+      "UBERON",
+      "CL",
+      "CHEBI",
+      "PATO",
+      "MONDO",
+      "HP",
+      "STATO",
+      "IAO",
+      "NBO",
+      "COGAT"
+    ],
+    "_default_ontologies": "Remote search scope for a label with no route at all (KeyTerm, Other, invented labels): well-curated ontologies the TTL can represent. Empty list = unrestricted (not recommended: LOINC/SNOMED/CRISP noise).",
+    "not_in_bioportal": [
+      "BKE",
+      "HGNC",
+      "NCBIGene",
+      "PCL",
+      "MmusDv",
+      "HsapDv"
+    ]
   }
 }

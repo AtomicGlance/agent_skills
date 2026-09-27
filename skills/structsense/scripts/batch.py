@@ -463,6 +463,18 @@ def check_review(obj: Any) -> Optional[str]:
     return None
 
 
+def dedupe_review(obj: dict) -> dict:
+    """An id reviewed twice in one file (a model repeating itself) keeps its first
+    verdict; judge_combine rejects duplicates, and one repeat must not fail a paper."""
+    seen, items = set(), []
+    for it in obj.get("items") or []:
+        if isinstance(it, dict) and it.get("id") not in seen:
+            seen.add(it.get("id"))
+            items.append(it)
+    obj["items"] = items
+    return obj
+
+
 def check_combiner(obj: Any) -> Optional[str]:
     return None if isinstance(obj, dict) else "expected the JSON object prompts/judge-combiner.md specifies"
 
@@ -636,7 +648,7 @@ def advance(job: Job) -> Optional[dict]:
         from judge_combine import apply_combiner, combine, load_reviews
         reviews_paths = sorted((jdir / "reviews").glob("*.json"))
         for rp in reviews_paths:  # provenance: who judged, how
-            r = read_json(rp) or {}
+            r = dedupe_review(read_json(rp) or {})
             if r.get("judge") != "grounding_script":
                 r.setdefault("judge", rp.stem.rsplit("-", 1)[0])
                 r.setdefault("model", f"llm:{job.model}")

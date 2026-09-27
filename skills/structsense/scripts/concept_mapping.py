@@ -533,6 +533,17 @@ class Lexicon:
 # Trusted mapper
 # ---------------------------------------------------------------------------
 
+_REG = None
+
+
+def _registry():
+    global _REG
+    if _REG is None:
+        from prefixes import PrefixRegistry
+        _REG = PrefixRegistry()
+    return _REG
+
+
 class TrustedMapper:
     def __init__(self, cfg: dict):
         self.cfg = cfg
@@ -666,6 +677,30 @@ class ConceptMapper:
         self.history: list[str] = []
         self.counts: dict[str, int] = defaultdict(int)
 
+    def remote_route(self, label: Optional[str]) -> Optional[list[str]]:
+        """Ontologies a remote search may return for this label: remote.label_ontologies
+        first (remote-only routes, e.g. Measurement -> STATO/PATO/OBI), then the
+        label_routing used for trusted files, then remote.default_ontologies. Never an
+        unrestricted search when a default list is configured."""
+        remote = self.cfg.get("remote") or {}
+        own = _clean(remote.get("label_ontologies")).get(label or "")
+        if own:
+            return own
+        route = self.trusted.route(label) if self.trusted else _clean(self.cfg.get("label_routing")).get(label or "")
+        absent = {x.upper() for x in remote.get("not_in_bioportal") or []}
+        kept = [p for p in route or [] if p.upper() not in absent]
+        if kept:
+            return kept
+        if route is not None and not route and label:  # an explicit [] route: never map this label
+            return []
+        return remote.get("default_ontologies") or None
+
+    @staticmethod
+    def representable(iri: str) -> bool:
+        """A remote hit is usable only if the TTL can name it: its namespace is in the
+        prefix registry (a guessed prefix is how one namespace gets two names)."""
+        return bool(iri) and _registry().compact(iri) is not None
+
     def _remote_client(self, name: str):
         if name in self._remote:
             return self._remote[name]
@@ -742,11 +777,14 @@ class ConceptMapper:
                 by_label[it.get("label")].append(it)
             still = []
             for label, group in by_label.items():
-                route = (self.trusted.route(label) if self.trusted
-                         else _clean(self.cfg.get("label_routing")).get(label or ""))
+                route = self.remote_route(label)
+                if route == []:  # a general-domain label (Person, Date, ...): no ontology target
+                    still.extend(group)
+                    continue
                 uniq = list(dict.fromkeys(it[surface_key] for it in group))
                 try:
-                    results = client.map_batch(uniq, ontologies=route, max_results=self.max_results)
+                    kw = {"accept": self.representable} if source == "bioportal" else {}
+                    results = client.map_batch(uniq, ontologies=route, max_results=self.max_results, **kw)
                 except Exception as e:  # one failing source must not lose the batch
                     self.history.append(f"{source}:error {type(e).__name__}")
                     still.extend(group)
@@ -776,6 +814,9 @@ class ConceptMapper:
         for f in _MAPPING_FIELDS:
             if m.get(f) is not None:
                 it[f] = m[f]
+        oid = it.get("ontology_id")
+        if isinstance(oid, str) and oid.startswith("http"):
+            it["ontology_id"] = _registry().canonical_iri(oid)  # one term, one IRI across sources
         it.pop("mapping_tier", None)  # a new mapping has not been judged yet
 
     def meta(self) -> dict:

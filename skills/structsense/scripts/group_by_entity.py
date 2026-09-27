@@ -37,8 +37,24 @@ Output shape per group:
 from __future__ import annotations
 
 from collections import defaultdict
+import re
 from statistics import mean
 from typing import Any, Iterable, Optional
+
+
+_WRAP_JOIN = re.compile(r"([a-z])[-\u00ad][ \t]*\n[ \t]*([a-z])")
+_WRAP_KEEP = re.compile(r"(\w)-[ \t]*\n[ \t]*(\w)")
+
+
+def reading_form(surface: str) -> str:
+    """The surface as a reader sees it, for names, grouping and keys — never for
+    offsets (surfaceForm stays byte-exact). PDF line wraps are undone: a word split
+    between lowercase letters is rejoined ("neu-\nrons" -> "neurons"), a real hyphen is
+    kept ("NP-\nGPCR" -> "NP-GPCR"), soft hyphens go, whitespace collapses."""
+    s = (surface or "").replace("\u00ad", "")
+    s = _WRAP_JOIN.sub(r"\1\2", s)
+    s = _WRAP_KEEP.sub(r"\1-\2", s)
+    return " ".join(s.split())
 
 
 def _canonical_key(entity: str, label: Optional[str]) -> tuple[str, str]:
@@ -49,7 +65,7 @@ def _canonical_key(entity: str, label: Optional[str]) -> tuple[str, str]:
     Different labels (e.g. 'Pvalb' as Gene vs as LineageMarker) intentionally
     do NOT collapse — they're semantically different.
     """
-    return ((entity or "").strip().lower(), (label or "").strip())
+    return (reading_form(entity).lower(), (label or "").strip())
 
 
 def _pick_canonical_surface(surfaces: list[str]) -> str:
@@ -106,7 +122,7 @@ def group_mentions_by_entity(
 
     out: list[dict] = []
     for (lower_form, label), mentions in buckets.items():
-        canonical = _pick_canonical_surface([m[surface_key] for m in mentions])
+        canonical = reading_form(_pick_canonical_surface([reading_form(m[surface_key]) for m in mentions]))
         best = _pick_best_alignment(mentions)
 
         # merge sentences by exact text; aggregate the locations they appear in.
@@ -230,7 +246,7 @@ def unify_ontology_across_entities(entities: list[dict],
             continue
         surface = (ent.get(surface_key) or ent.get("term")
                    or ent.get("name") or "")
-        key = (str(surface).lower().strip(),
+        key = (reading_form(str(surface)).lower(),
                str(ent.get("label") or "").lower().strip())
         if not key[0]:
             continue
@@ -243,7 +259,7 @@ def unify_ontology_across_entities(entities: list[dict],
             continue
         surface = (ent.get(surface_key) or ent.get("term")
                    or ent.get("name") or "")
-        key = (str(surface).lower().strip(),
+        key = (reading_form(str(surface)).lower(),
                str(ent.get("label") or "").lower().strip())
         if key in best:
             ent.update(best[key])
@@ -294,7 +310,7 @@ def mention_groups(result: dict) -> list[dict]:
     for (kind, _lower, label), items in buckets.items():
         surf = "entity" if kind == "entity" else "term"
         items.sort(key=lambda i: i.get("start") if isinstance(i.get("start"), int) else 10 ** 12)
-        canonical = _pick_canonical_surface([i[surf] for i in items])
+        canonical = reading_form(_pick_canonical_surface([reading_form(i[surf]) for i in items]))
         groups.append({"kind": kind, "surface": canonical, "label": label or None,
                        "id": item_id(canonical, label or None, kind),
                        "surf_key": surf, "items": items})
