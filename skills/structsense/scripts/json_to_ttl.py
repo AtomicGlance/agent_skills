@@ -123,12 +123,16 @@ class TtlConfig:
         self.secondary_default = (raw.get("secondary_resource_classes") or {}).get("_default", "ResearchEntity")
         self.secondary_classes = sec
         self.media_types = _clean(raw.get("media_types"))
+        self.label_max_length = int((raw.get("labels") or {}).get("max_length") or 0)
         iri = raw.get("iri") or {}
         self.iri_scheme = iri.get("scheme", "uuid5")
         self.iri_base = iri.get("base", "https://brainkb.org/kb/")
         self.uuid_ns = uuid.uuid5(uuid.NAMESPACE_URL, iri.get("namespace_seed", self.iri_base))
         self.global_names = _clean(iri.get("global_names"))
-        self.paper_name = iri.get("paper_name", "{kind}|{paper}|{local}")
+        self.paper_name = iri.get("paper_name", "{kind}|{paper}|{variant}|{local}")
+        self.paper_shared_name = iri.get("paper_shared_name", "{kind}|{paper}|{local}")
+        self.paper_shared_kinds = frozenset(iri.get("paper_shared_kinds") or
+                                            ("publication", "document_version", "sentence", "section"))
         self.kb_ns = self.iri_base
 
 
@@ -252,6 +256,91 @@ def split_ontology_ids(raw: Optional[str]) -> list[tuple[str, Optional[str]]]:
     return out
 
 
+_SENT_END = re.compile(r"(?<=[.!?])[\"')\]]*\s+(?=[\"'(\[]?[A-Z0-9])|\n[ \t]*\n")
+
+
+def sentence_around(text: str, start: int, end: int, max_chars: int = 1200) -> Optional[str]:
+    """The sentence of `text` that contains [start, end) whole: bounded by sentence
+    ends or blank lines, never by a single line break (PDF text wraps mid-sentence and
+    hyphenates across lines: "endocan-\nnabinoids")."""
+    if not (0 <= start < end <= len(text)):
+        return None
+    lo = max(0, start - max_chars)
+    left = [m.end() for m in _SENT_END.finditer(text, lo, start)]
+    a = left[-1] if left else lo
+    m = _SENT_END.search(text, end, min(len(text), end + max_chars))
+    b = m.start() if m else min(len(text), end + max_chars)
+    sent = text[a:b].strip()
+    return sent or None
+
+
+_GLOSS = re.compile(r"\s*\(([^()]*)\)\s*$")
+
+
+def split_gloss(label: str) -> tuple[str, Optional[str]]:
+    """'L-phenylalanine (Phe; amino acid odorant; CS in some groups)' ->
+    ('L-phenylalanine (Phe)', 'amino acid odorant; CS in some groups'). A name keeps a
+    trailing abbreviation — '(SST-IN)' — but an explanation is not part of a name."""
+    m = _GLOSS.search(label or "")
+    if not m:
+        return label, None
+    inner = [p.strip() for p in m.group(1).split(";") if p.strip()]
+    head = label[:m.start()].rstrip()
+    abbrev = [p for p in inner if len(p.split()) == 1 and len(p) <= 15]
+    gloss = [p for p in inner if p not in abbrev]
+    if not gloss:
+        return label, None
+    name = f"{head} ({'; '.join(abbrev)})" if abbrev else head
+    return name, "; ".join(gloss)
+
+
+def load_source_text(source_path: Optional[Path]) -> Optional[str]:
+    """The text the offsets index into: the source itself when it is text, else the
+    sibling <stem>.txt that input_loader writes."""
+    if not source_path:
+        return None
+    p = Path(source_path)
+    for cand in ((p,) if p.suffix.lower() in (".txt", ".md") else ()) + (p.with_suffix(".txt"),):
+        if cand.is_file():
+            try:
+                return cand.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                return None
+    return None
+
+
+def extraction_variant(result: dict, explicit: Optional[str] = None) -> str:
+    """Which extraction of the paper this is: 'ner:neuroscience', 'ner:cns-cells', ...
+    Explicit > run_metadata.variant > task_type + ner_domain (run_metadata or top level)."""
+    if explicit:
+        return explicit
+    rm = result.get("run_metadata") or {}
+    if rm.get("variant"):
+        return str(rm["variant"])
+    task = result.get("task_type") or "ner"
+    domain = rm.get("ner_domain") or result.get("ner_domain")
+    return f"{task}:{domain}" if domain else str(task)
+
+
+def coordinated_slots(item: dict) -> list[Optional[str]]:
+    """Per-element ontology ids of a coordinated span, in text order (None = '-'
+    gap), or [] when the span names one thing. The count is `coordinated_elements`
+    when the extractor gave it, else the number of ';' slots."""
+    raw = str(item.get("ontology_id") or "")
+    parts = [p for p in raw.split(";")] if raw.strip() else []
+    slots: list[Optional[str]] = []
+    for p in parts:
+        cand = _QUALIFIER.sub("", p.split(",")[0]).strip()
+        slots.append(cand if cand and cand != "-" else None)
+    n = item.get("coordinated_elements")
+    n = n if isinstance(n, int) and n >= 1 else len(slots)
+    if n <= 1:
+        return []
+    if item.get("concept_mapping_provenance") != "tool":
+        slots = []
+    return (slots + [None] * n)[:n]
+
+
 def concept_ref(oid: str, ontology: Optional[str], cfg: TtlConfig,
                 registry: Any = None) -> Optional[tuple[str, str, str]]:
     """Return (iri, curie, acronym) for a tool-returned id, or None if unparseable.
@@ -366,8 +455,10 @@ class TurtleBuilder:
                  synonyms: dict[str, str], declared: set[str], paper_slug: str,
                  kb_ns: str, profile: str, run_id: str, checked_date: str,
                  source_checksum: Optional[str], media_type: Optional[str],
-                 cfg: Optional[TtlConfig] = None, ontology_version: Optional[str] = None):
+                 cfg: Optional[TtlConfig] = None, ontology_version: Optional[str] = None,
+                 variant: Optional[str] = None, source_text: Optional[str] = None):
         self.cfg = cfg or TtlConfig()
+        self.source_text = source_text
         self.schema_version = ontology_version
         self.config_hash = config_hash()
         self.result = result
@@ -389,6 +480,10 @@ class TurtleBuilder:
         self.KB = Namespace(kb_ns if kb_ns.endswith("/") else kb_ns + "/")
         doi = re.sub(r"^(https?://(dx\.)?doi\.org/|doi:)", "", (result.get("source_metadata") or {}).get("doi") or "", flags=re.I)
         self.paper_id = doi or paper_slug
+        # Two extractions of one paper (e.g. general NER and cns-cells) are different
+        # readings: their mentions, classifications and reviews must not share IRIs,
+        # or a store holding both merges them into one node with two labels.
+        self.variant = extraction_variant(result, variant)
         from prefixes import PrefixRegistry
         self.registry = PrefixRegistry()
         self.g = Graph()
@@ -400,6 +495,7 @@ class TurtleBuilder:
         self.warnings: list[str] = []
         self.counts: dict[str, int] = defaultdict(int)
         self.entities_by_key: dict[str, dict] = {}
+        self.coordinated: list[dict] = []  # coordinated spans, resolved into components after all entities
         self.entity_by_group_id: dict[str, dict] = {}
         self.agents: dict[str, URIRef] = {}
         self.concepts: dict[str, URIRef] = {}
@@ -433,13 +529,22 @@ class TurtleBuilder:
             return None
 
     def label(self, node, text):
-        self.add(node, RDFS.label, Literal(str(text)))
+        """rdfs:label is a NAME, never an explanation (ttl_config.json `labels`). A name
+        over max_length keeps its full text as rdfs:comment and is cut at a word."""
+        text = " ".join(str(text).split())
+        cap = self.cfg.label_max_length
+        if cap and len(text) > cap:
+            self.add(node, RDFS.comment, Literal(text))
+            cut = text[:cap - 1].rsplit(" ", 1)[0] if " " in text[:cap - 1] else text[:cap - 1]
+            text = cut.rstrip(" ,;:") + "…"
+        self.add(node, RDFS.label, Literal(text))
 
     def mint(self, kind: str, local: str) -> URIRef:
         """A paper-scoped node: UUIDv5 of `paper_name` (see ttl_config.json `iri`)."""
         if self.cfg.iri_scheme == "slug":
             return self.EX[f"{kind}-{slugify(local, max_len=60)}"]
-        name = self.cfg.paper_name.format(kind=kind, paper=self.paper_id, local=local)
+        tpl = self.cfg.paper_shared_name if kind in self.cfg.paper_shared_kinds else self.cfg.paper_name
+        name = tpl.format(kind=kind, paper=self.paper_id, variant=self.variant, local=local)
         return self.KB[str(uuid.uuid5(self.cfg.uuid_ns, name))]
 
     def mint_global(self, kind: str, **fields) -> URIRef:
@@ -490,7 +595,7 @@ class TurtleBuilder:
 
         self.add(self.docv, RDF.type, NER.DocumentVersion)
         self.add(self.docv, NER.versionOfDocument, self.pub)
-        self.label(self.docv, f"document version: {title or self.slug}")
+        self.label(self.docv, "document version")
         sp = self.meta.get("source_path")
         media = self.media_type or (self.cfg.media_types.get(Path(str(sp)).suffix.lower()) if sp else None)
         if media:
@@ -503,6 +608,7 @@ class TurtleBuilder:
         task = self.result.get("task_type") or ("resource" if _resource_items(self.result) else "ner")
         self.add(self.run, RDF.type, NER.NERExtractionActivity)
         self.label(self.run, f"structsense {task} extraction run")
+        self.add(self.run, RDFS.comment, Literal(f"extraction variant: {self.variant}"))
         self.add(self.run, NER.taskType, self.lit(f"{task} + concept mapping + TTL representation", XSD.string))
         self.add(self.run, NER.runIdentifier, self.lit(self.run_id, XSD.string))
         self.add(self.run, PROV.used, self.docv)
@@ -696,6 +802,7 @@ class TurtleBuilder:
 
         for ent in self.entities_by_key.values():
             self.emit_entity(ent)
+        self.emit_components()
 
     def emit_entity(self, ent: dict):
         node = ent["node"]
@@ -703,8 +810,7 @@ class TurtleBuilder:
             self.add(node, RDF.type, NER[cls])
         self.add(node, RDF.type, NER.NamedEntity)
         self.add(node, NER.normalizedEntityKey, self.lit(ent["key"], XSD.string))
-        self.add(node, NER.normalizedEntityLabel, self.lit(ent["label"], XSD.string))
-        self.label(node, ent["label"])
+        self.entity_name(node, ent)
         self.add(node, PROV.hadPrimarySource, self.pub)
         self.add(node, PROV.wasGeneratedBy, self.run)
         self.add(self.snapshot, PROV.hadMember, node)
@@ -736,9 +842,15 @@ class TurtleBuilder:
             self.add(m, NER.documentEndOffset, self.lit(end, XSD.nonNegativeInteger))
         self.counts["mentions"] += 1
         agent = self.source_agent(it.get("source_model"))
+        slots = coordinated_slots(it)
+        if slots:
+            self.add(m, RDF.type, NER.CoordinatedEntityMention)
+            self.add(m, NER.coordinatedElementCount, self.lit(len(slots), XSD.positiveInteger))
+            self.coordinated.append({"ent": ent, "mention": m, "n": n, "surface": surface,
+                                     "item": it, "slots": slots, "agent": agent})
         if self.profile != "full":
             return
-        sent = it.get("sentence")
+        sent = self.mention_sentence(it, surface)
         if sent:
             self.add(m, NER.inSentence, self.sentence_node(sent))
         loc = it.get("paper_location")
@@ -746,7 +858,7 @@ class TurtleBuilder:
             self.add(m, NER.inSection, self.section_node(str(loc)))
         av = self.mint("annotation_version", f"{ent['key']}|{n}|1")
         self.add(av, RDF.type, NER.EntityAnnotationVersion)
-        self.label(av, f"annotation v1 of '{surface}'")
+        self.label(av, "annotation v1")
         self.add(av, NER.annotationOfMention, m)
         self.add(av, NER.refersToNormalizedEntity, ent["node"])
         self.add(av, NER.revisionNumber, self.lit(1, XSD.positiveInteger))
@@ -757,7 +869,7 @@ class TurtleBuilder:
         ent.setdefault("avs", {}).setdefault(grp["id"], []).append(av)
         cl = self.mint("classification", f"{ent['key']}|{n}|1")
         self.add(cl, RDF.type, NER.EntityClassification)
-        self.label(cl, f"classification of '{surface}' as {grp['label'] or 'key term'}")
+        self.label(cl, f"classification {grp['label'] or 'KeyTerm'}")
         self.add(cl, NER.classifiedAsClass, NER[sorted(ent["classes"])[0]])
         self.add(cl, NER.classificationLabelRaw, self.lit(grp["label"] or "KeyTerm", XSD.string))
         # the judged confidence of this reading when the ensemble ran, else the
@@ -777,13 +889,93 @@ class TurtleBuilder:
             self.add(cl, NER.specificityLabelRaw, self.lit(spec, XSD.string))
         self.add(av, NER.hasClassification, cl)
 
+    def emit_components(self):
+        """One component EntityMention per element of a coordinated span ("SST and
+        PV interneurons" -> 2), in text order (cns-cells `coordinated_elements`;
+        references/cell-annotation-conventions.md). A component belongs to the
+        paper's own entity for that element's concept when one exists (so the span
+        counts as a mention of it), else to the span's entity; its annotation
+        version carries only that element's mapping decision. A '-' slot is kept as
+        an honest gap. The ontology has no ordinal property yet, so the position is
+        in the label and comment (ttl-representation.md, ontology fixes)."""
+        by_concept: dict[str, dict] = {}
+        for ent in self.entities_by_key.values():
+            ids = ent.get("concept_ids") or []
+            if len(ids) == 1 and not ent.get("coordinated"):
+                by_concept.setdefault(ids[0], ent)
+        for rec in self.coordinated:
+            span_ent, m, total = rec["ent"], rec["mention"], len(rec["slots"])
+            for i, oid in enumerate(rec["slots"], 1):
+                owner = by_concept.get(oid) if oid else None
+                owner = owner or span_ent
+                c = self.mint("mention", f"{span_ent['key']}|{rec['n']}|element|{i}")
+                self.add(owner["node"], NER.hasMention, c)
+                self.add(c, RDF.type, NER.EntityMention)
+                self.add(c, NER.surfaceForm, self.lit(rec["surface"], XSD.string))
+                self.add(c, NER.partOfDocumentVersion, self.docv)
+                self.add(c, NER.componentOfMention, m)
+                self.add(m, NER.hasComponentMention, c)
+                self.label(c, f"element {i}/{total}")
+                self.add(c, RDFS.comment, Literal(
+                    f"Element {i} of {total} of a coordinated span; "
+                    + (f"ontology term {oid}." if oid else "no ontology term for this element (gap).")))
+                self.counts["component_mentions"] = self.counts.get("component_mentions", 0) + 1
+                if self.profile != "full":
+                    continue
+                sent = self.mention_sentence(rec["item"], rec["surface"])
+                if sent:
+                    self.add(c, NER.inSentence, self.sentence_node(sent))
+                av = self.mint("annotation_version", f"{span_ent['key']}|{rec['n']}|element|{i}|1")
+                self.add(av, RDF.type, NER.EntityAnnotationVersion)
+                self.label(av, "annotation v1")
+                self.add(av, NER.annotationOfMention, c)
+                self.add(av, NER.refersToNormalizedEntity, owner["node"])
+                self.add(av, NER.revisionNumber, self.lit(1, XSD.positiveInteger))
+                self.add(av, NER.inSnapshot, self.snapshot)
+                self.add(av, PROV.wasAttributedTo, rec["agent"])
+                self.add(c, NER.hasAnnotationVersion, av)
+                self.add(c, NER.hasCurrentAnnotationVersion, av)
+                pair = (owner.get("decisions") or {}).get(oid) or (span_ent.get("decisions") or {}).get(oid) if oid else None
+                if pair:
+                    self.add(av, NER.hasMappingDecision, pair[0])
+                    self.add(av, NER.hasMappingCandidate, pair[1])
+
+    def entity_name(self, node, ent: dict):
+        """normalizedEntityLabel + rdfs:label are the NAME; a gloss the planner put in
+        parentheses, and the plan's `note`, become rdfs:comment strings."""
+        name, gloss = split_gloss(ent["label"])
+        self.add(node, NER.normalizedEntityLabel, self.lit(name, XSD.string))
+        self.label(node, name)
+        if gloss:
+            self.add(node, RDFS.comment, Literal(gloss))
+        for plan in ent.get("plans") or []:
+            note = plan.get("note") if isinstance(plan, dict) else None
+            if isinstance(note, str) and note.strip():
+                self.add(node, RDFS.comment, Literal(note.strip()))
+
+    def mention_sentence(self, it: dict, surface: str) -> Optional[str]:
+        """The item's sentence when it contains the surface; else, when the source text
+        is at hand and the offsets select the surface, the sentence around the offsets
+        (so a sentence cut at a line-wrap hyphen is repaired, not propagated)."""
+        sent = it.get("sentence")
+        if sent and surface in sent:
+            return sent
+        start, end, text = it.get("start"), it.get("end"), self.source_text
+        if text and isinstance(start, int) and isinstance(end, int) and text[start:end] == surface:
+            fixed = sentence_around(text, start, end)
+            if fixed and surface in fixed:
+                if sent:
+                    self.counts["sentences_repaired"] += 1
+                return fixed
+        return sent
+
     def sentence_node(self, text: str) -> URIRef:
         if text not in self.sentences:
             node = self.mint("sentence", hashlib.sha1(text.encode()).hexdigest())
             self.add(node, RDF.type, NER.Sentence)
             self.add(node, NER.sentenceText, self.lit(text, XSD.string))
             self.add(node, NER.partOfDocumentVersion, self.docv)
-            self.label(node, text if len(text) <= 80 else text[:77] + "...")
+            self.label(node, f"sentence {len(self.sentences) + 1}")  # the text is ner:sentenceText
             self.sentences[text] = node
         return self.sentences[text]
 
@@ -839,6 +1031,8 @@ class TurtleBuilder:
                     self.add(ent["node"], RDFS.comment, Literal(plan_note))
                 if self.profile == "full":
                     self.emit_decision(ent, concept, ref, rel, it, single)
+                ent.setdefault("concept_ids", []).append(single)
+                ent["coordinated"] = ent.get("coordinated") or bool(coordinated_slots(it))
                 emitted += 1
                 self.counts["mapped_concepts"] += 1
         if not emitted:
@@ -918,14 +1112,14 @@ class TurtleBuilder:
         self.add(cand, NER.candidateConcept, concept)
         self.add(cand, NER.candidateForNormalizedEntity, ent["node"])
         self.add(cand, NER.mappingRank, self.lit(1, XSD.positiveInteger))  # the selected (top) candidate
-        self.label(cand, f"candidate {ref[1]} for {ent['key']}")
+        self.label(cand, f"candidate {ref[1]}")
         score = it.get("mapping_score") or it.get("score")
         if isinstance(score, (int, float)):
             sc = self.mint("mapping_score", base)
             self.add(sc, RDF.type, NER.MappingScore)
             self.add(sc, NER.scoreType, self.lit(str(self.mapper_name), XSD.string))
             self.add(sc, NER.scoreValue, self.dec(score))
-            self.label(sc, f"{self.mapper_name} score {score}")
+            self.label(sc, "mapping score")
             self.add(cand, NER.hasMappingScore, sc)
         self.add(dec, RDF.type, NER.ConceptMappingDecision)
         self.add(dec, NER.decisionForNormalizedEntity, ent["node"])
@@ -952,7 +1146,7 @@ class TurtleBuilder:
             conf = it["score"]
         if isinstance(conf, (int, float)):
             self.add(dec, NER.decisionConfidence, self.dec(round(float(conf), 4)))
-        self.label(dec, f"mapping decision: {ent['key']} -> {ref[1]} ({rel})")
+        self.label(dec, f"mapping decision {ref[1]}")
 
     # ---- reviews ------------------------------------------------------------
     def judge_agent(self, judge: str) -> URIRef:
@@ -1030,7 +1224,8 @@ class TurtleBuilder:
             n += 1
             cr = self.mint("change", f"{local}|{n}")
             self.add(cr, RDF.type, cls)
-            self.label(cr, f"{cls.split('/')[-1]}: {local}")
+            self.label(cr, cls.split("/")[-1])
+            self.add(cr, RDFS.comment, Literal(local))
             if entity is not None:
                 self.add(cr, NER.changedEntity, entity)
                 self.add(entity, NER.hasChangeRecord, cr)
@@ -1091,7 +1286,8 @@ class TurtleBuilder:
                        f"{len(report.get('demoted') or [])} demoted, {len(report.get('fixes_applied') or [])} fixed, "
                        f"{len(report.get('needs_review') or [])} needed review, "
                        f"{len((report.get('claims') or {}).get('dropped') or [])} claims dropped")
-            self.label(vr, summary)
+            self.label(vr, "judge ensemble report")
+            self.add(vr, RDFS.comment, Literal(summary))
             self.add(vr, PROV.wasGeneratedBy, self.judge_run)
             self.add(self.snapshot, NER.hasValidationReport, vr)
 
@@ -1118,7 +1314,7 @@ class TurtleBuilder:
             self.add(r, NER.reviewComment, self.lit(str(rv["reason"])))
         self.add(r, PROV.wasAttributedTo, self.judge_agent(judge))
         self.add(r, PROV.wasGeneratedBy, self.judge_activity(judge))
-        self.label(r, f"{judge} review of {gid}")
+        self.label(r, f"{judge} review")
         self.counts["review_decisions"] += 1
         return r
 
@@ -1157,7 +1353,7 @@ class TurtleBuilder:
             run, agent = self.judge_run, self.combine_agent()
         self.add(r, PROV.wasGeneratedBy, run)
         self.add(r, PROV.wasAttributedTo, agent)
-        self.label(r, f"ensemble decision on {gid}")
+        self.label(r, "ensemble decision")
         self.counts["review_decisions"] += 1
         return r
 
@@ -1175,7 +1371,8 @@ class TurtleBuilder:
             return self._comb
         run = self.mint("run", f"{self.run_id}|judge|combiner")
         self.add(run, RDF.type, NER.AutomaticValidationActivity)
-        self.label(run, "judge combiner (resolves needs_review only)")
+        self.label(run, "judge combiner")
+        self.add(run, RDFS.comment, Literal("Resolves needs_review items only, choosing among the judges' suggestions."))
         self.add(run, NER.runIdentifier, self.lit(f"{self.run_id}-judge-combiner"))
         self.add(run, NER.taskType, self.lit("judge combiner"))
         self.add(run, PROV.wasInformedBy, self.judge_run)
@@ -1275,8 +1472,7 @@ class TurtleBuilder:
             self.add(node, RDF.type, NER[cls])
         self.add(node, RDF.type, NER.NamedEntity)
         self.add(node, NER.normalizedEntityKey, self.lit(ent["key"], XSD.string))
-        self.add(node, NER.normalizedEntityLabel, self.lit(ent["label"], XSD.string))
-        self.label(node, ent["label"])
+        self.entity_name(node, ent)
         self.add(node, PROV.hadPrimarySource, self.pub)
         self.add(node, PROV.wasGeneratedBy, self.run)
         self.add(self.snapshot, PROV.hadMember, node)
@@ -1451,7 +1647,7 @@ class TurtleBuilder:
                 self.add(ver, NER.causalStrength, self.dec(cr["strength"]))
             evidence = cr.get("evidence") or "no evidence fragment recorded"
             self.add(ver, RDFS.comment, Literal(f"evidence: {evidence}"))
-            self.label(ver, f"v1 of {label[len('causal: '):]}")
+            self.label(ver, "causal relation v1")
             est = cr.get("effect_estimate")
             if isinstance(est, dict) and est.get("measure"):
                 self.emit_estimate(ver, f"{rid}|1", est)
@@ -1466,7 +1662,7 @@ class TurtleBuilder:
                 continue
             node = self.mint("causal_chain", str(ch.get("id") or f"chain-{len(members)}"))
             self.add(node, RDF.type, NER.CausalChain)
-            self.label(node, ch.get("label") or f"causal chain of {len(members)} relations")
+            self.label(node, ch.get("label") or "causal chain")
             self.add(node, PROV.hadPrimarySource, self.pub)
             for r in members:
                 self.add(node, NER.hasChainRelation, r)
@@ -1493,7 +1689,9 @@ class TurtleBuilder:
         if isinstance(est.get("sample_size"), int) and est["sample_size"] >= 0:
             self.add(e, NER.sampleSize, self.lit(est["sample_size"], XSD.nonNegativeInteger))
             parts.append(f"n={est['sample_size']}")
-        self.label(e, "effect estimate: " + ", ".join(parts))
+        self.label(e, "effect estimate")
+        if parts:
+            self.add(e, RDFS.comment, Literal(", ".join(parts)))
 
     # ---- driver -------------------------------------------------------------
     def build(self) -> Graph:
@@ -1571,7 +1769,8 @@ def result_to_ttl(result: dict, *, kg_plan: Optional[dict] = None,
                   run_id: Optional[str] = None, checked_date: Optional[str] = None,
                   source_path: Optional[Path] = None,
                   media_type: Optional[str] = None,
-                  ttl_config: Path = DEFAULT_TTL_CONFIG) -> tuple[str, dict]:
+                  ttl_config: Path = DEFAULT_TTL_CONFIG,
+                  variant: Optional[str] = None) -> tuple[str, dict]:
     """Library entry point. Returns (turtle_text, report)."""
     cfg = TtlConfig(ttl_config)
     declared, onto_version = load_ontology_info(ontology)
@@ -1588,9 +1787,10 @@ def result_to_ttl(result: dict, *, kg_plan: Optional[dict] = None,
         synonyms=syn.get("synonyms", {}),
         declared=declared, ontology_version=onto_version, paper_slug=slug, kb_ns=kb_ns,
         profile=profile, run_id=run_id or f"structsense-{date}-{digest}",
-        checked_date=date, source_checksum=checksum, media_type=media_type, cfg=cfg)
+        checked_date=date, source_checksum=checksum, media_type=media_type, cfg=cfg, variant=variant,
+        source_text=load_source_text(source_path))
     graph = builder.build()
-    report = {"paper_slug": slug, "namespace": str(builder.EX), "profile": profile,
+    report = {"paper_slug": slug, "namespace": str(builder.EX), "profile": profile, "variant": builder.variant,
               "triples": len(graph), "counts": dict(builder.counts),
               "warnings": builder.warnings}
     return graph.serialize(format="turtle"), report
@@ -1621,6 +1821,10 @@ def _main() -> int:
     ap.add_argument("--ttl-config", type=Path, default=DEFAULT_TTL_CONFIG,
                     help="representation policy (default default_ontology/ttl_config.json)")
     ap.add_argument("--run-id")
+    ap.add_argument("--variant", default=None,
+                    help="which extraction of the paper this is (default: task_type:ner_domain from the "
+                         "result, e.g. ner:cns-cells). Scopes per-run IRIs so two extractions of one "
+                         "paper never share a mention, classification or review node")
     ap.add_argument("--started-at", help="ISO-8601 time the extraction run began (else result.run_metadata)")
     ap.add_argument("--ended-at", help="ISO-8601 time the extraction run ended (else result.run_metadata)")
     ap.add_argument("--publication-date", help="YYYY-MM-DD (else source_metadata.publication_date)")
@@ -1644,7 +1848,7 @@ def _main() -> int:
         result, kg_plan=plan, ontology=args.ontology, label_map=args.label_map,
         synonyms=args.synonyms, paper_slug=args.paper_slug, kb_ns=args.kb_ns,
         profile=args.profile, run_id=args.run_id, checked_date=args.date,
-        source_path=args.source, ttl_config=args.ttl_config)
+        source_path=args.source, ttl_config=args.ttl_config, variant=args.variant)
     out = args.out or default_ttl_path(args.result)
     out.write_text(ttl)
     if args.report:

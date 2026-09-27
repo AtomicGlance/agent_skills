@@ -202,6 +202,7 @@ def combine(result: dict, reviews: dict[str, dict], cfg: dict,
                     it.setdefault("label_before_judge", it.get("label"))
                     it["label"] = new_label
                 final_id = gid.rsplit("|", 1)[0] + f"|{new_label}"
+                _move_plan_entry(plan, gid, final_id)
                 _mark_fix(rev_list, "labeling")
                 report["fixes_applied"].append({"id": gid, "field": "label", "from": g["label"],
                                                 "to": new_label, "licensed_by": "labeling",
@@ -265,6 +266,25 @@ def combine(result: dict, reviews: dict[str, dict], cfg: dict,
                       "unreviewed": len(report["unreviewed"])}
     _refresh_stats(result)
     return result, plan, report
+
+
+def _move_plan_entry(plan: Optional[dict], old_id: str, new_id: str) -> None:
+    """A relabel changes the group id "<entity>|<label>"; the kg_plan entry must follow
+    it, or the entity loses its key, class, relations and hierarchy in the TTL. An
+    entry already at the new id wins field by field; the moved one fills the gaps."""
+    ents = (plan or {}).get("entities")
+    if not isinstance(ents, dict) or old_id == new_id:
+        return
+    old = next((k for k in ents if k.lower() == old_id.lower()), None)
+    if old is None:
+        return
+    moved = ents.pop(old)
+    have = next((k for k in ents if k.lower() == new_id.lower()), None)
+    if have is None:
+        ents[new_id] = moved
+    else:
+        for k, v in moved.items():
+            ents[have].setdefault(k, v)
 
 
 def _rekey(plan: Optional[dict], old: Optional[str], new: str) -> None:
@@ -412,6 +432,7 @@ def apply_combiner(result: dict, combiner_out: dict, kg_plan: Optional[dict] = N
             for it in g["items"]:
                 it.setdefault("label_before_judge", it.get("label"))
                 it["label"] = to
+            _move_plan_entry(plan, g["id"], g["id"].rsplit("|", 1)[0] + f"|{to}")
             entry["applied"] = True
         elif field == "tier" and g and to in TIERS:
             for it in g["items"]:

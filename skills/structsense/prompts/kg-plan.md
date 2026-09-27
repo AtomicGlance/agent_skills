@@ -33,6 +33,7 @@ Output strict JSON only — no prose, no fences:
     "<entity>|<label>": {
       "normalized_key":   "sst_interneuron",       // references/key-normalization.md
       "normalized_label": "somatostatin-expressing interneuron (SST-IN)",
+      "note":             "",                       // optional explanation/caveat -> rdfs:comment; NEVER put it in the label
       "class":            "Interneuron",           // optional: a DECLARED class, more specific than the label's
       "skos_tier":        "exactMatch",            // optional: only for a tool mapping; see tiers below
       "tier_note":        "UBERON term is the gyrus; paper means the cortical area", // optional caveat
@@ -68,6 +69,11 @@ RULES
    and "somatostatin interneurons|CellType") SHARE one key: that is how they
    become one entity. Different referents never share a key. Never a generic
    key (model, neuron, imaging, analysis, mice → mus_musculus).
+1b. normalized_label is a NAME (what a graph shows on the node): the canonical
+   term, optionally followed by its abbreviation in parentheses. Never a gloss
+   ("L-phenylalanine (Phe; amino acid odorant; CS in some groups)" is wrong:
+   label "L-phenylalanine (Phe)", note "amino acid odorant; CS in some groups").
+   Keep it under 60 characters.
 2. class: only a class the ontology declares (validate_ttl rejects anything
    else), and only when the paper's wording licenses it ("SST-INs" →
    Interneuron; "neurons" stays CellType).

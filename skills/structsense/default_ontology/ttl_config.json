@@ -1,0 +1,232 @@
+{
+  "_comment": "Representation policy for scripts/json_to_ttl.py and the policy layer of scripts/validate_ttl.py. Nothing in these lists is coded in the scripts \u2014 edit here. The SHACL shapes (named_entity_shapes.ttl) hold only the structural contract; the lists below are policy and are checked against this file.",
+  "version": "1.0.0",
+  "ontology_namespace": "https://brainkb.org/ner/",
+  "default_match_tier": "closeMatch",
+  "_default_match_tier": "skos tier for a tool mapping nobody graded (no judge, no kg_plan, no match_tier from the mapper). closeMatch claims near-identity only.",
+  "generic_keys": [
+    "model",
+    "neuron",
+    "neurons",
+    "imaging",
+    "analysis",
+    "the_algorithm",
+    "algorithm",
+    "method",
+    "mice",
+    "mouse",
+    "cell",
+    "cells",
+    "data",
+    "system",
+    "protein",
+    "gene",
+    "region",
+    "area",
+    "network",
+    "task",
+    "experiment",
+    "study",
+    "result",
+    "results"
+  ],
+  "_generic_keys": "normalizedEntityKey values too generic to merge on across papers (references/key-normalization.md). A fallback key that lands here is qualified with the paper slug; the validator reports any that remain.",
+  "interventional_evidence_bases": [
+    "experimental_intervention",
+    "genetic_perturbation",
+    "pharmacological_perturbation",
+    "randomized_intervention",
+    "dose_response"
+  ],
+  "_interventional_evidence_bases": "ner:causal-basis/* terms that license causalHypothetical false. Everything else keeps a causal claim hypothetical.",
+  "relation_predicates": {
+    "_comment": "The closed set of paper-stated relations an extractor (per-mention `relations`, cns-cells `cell_context`) or kg_plan.json may assert: short name -> predicate IRI. `broader` (skos:broader, the in-paper hierarchy) is always allowed besides these. Add a row to allow a new predicate; the prompts, the kg-plan schema, the claims judge and the validator all read this list.",
+    "part_of": "http://purl.obolibrary.org/obo/BFO_0000050",
+    "has_part": "http://purl.obolibrary.org/obo/BFO_0000051",
+    "located_in": "http://purl.obolibrary.org/obo/RO_0001025",
+    "has_participant": "http://purl.obolibrary.org/obo/RO_0000057",
+    "participates_in": "http://purl.obolibrary.org/obo/RO_0000056",
+    "expresses": "http://purl.obolibrary.org/obo/RO_0002292",
+    "expressed_in": "http://purl.obolibrary.org/obo/RO_0002206",
+    "overlaps": "http://purl.obolibrary.org/obo/RO_0002131",
+    "interacts_with": "http://purl.obolibrary.org/obo/RO_0002434",
+    "has_phenotype": "http://purl.obolibrary.org/obo/RO_0002200",
+    "capable_of": "http://purl.obolibrary.org/obo/RO_0002215",
+    "member_of": "http://purl.obolibrary.org/obo/RO_0002350",
+    "develops_from": "http://purl.obolibrary.org/obo/RO_0002202",
+    "derives_from": "http://purl.obolibrary.org/obo/RO_0001000",
+    "in_taxon": "http://purl.obolibrary.org/obo/RO_0002162"
+  },
+  "obo_prefixes": [
+    "UBERON",
+    "CL",
+    "PCL",
+    "NCBITaxon",
+    "MONDO",
+    "DOID",
+    "HP",
+    "CHEBI",
+    "DRON",
+    "BTO",
+    "OBI",
+    "MP",
+    "PR",
+    "GO",
+    "SO",
+    "ZFA",
+    "FBbt",
+    "MmusDv",
+    "HsapDv",
+    "FBdv",
+    "NBO",
+    "CIDO",
+    "ECO",
+    "PATO",
+    "ENVO",
+    "UO",
+    "MI",
+    "OGMS",
+    "IAO",
+    "BFO",
+    "RO",
+    "CLO",
+    "SYMP",
+    "TRANS",
+    "MF",
+    "MFOMD",
+    "ZFS",
+    "WBbt",
+    "XAO",
+    "EMAPA",
+    "MA",
+    "FAO",
+    "PO",
+    "OMIT",
+    "VO",
+    "NCIT",
+    "ORDO",
+    "CLM",
+    "BSPO",
+    "STATO",
+    "CP",
+    "OMO"
+  ],
+  "_obo_prefixes": "CURIE prefixes that expand to http://purl.obolibrary.org/obo/<PREFIX>_<id>. Other CURIEs expand through curie_expansions, then identifiers.org.",
+  "curie_expansions": {
+    "_comment": "CURIE prefix -> IRI template ({id} = local part) for non-OBO id spaces. This is also the registry of KNOWN namespaces: a trusted file's class in one of these namespaces keeps this prefix, never the file's own (scripts/prefixes.py). Add a row here to register a foreign namespace.",
+    "EFO": "http://www.ebi.ac.uk/efo/EFO_{id}",
+    "HGNC": "https://identifiers.org/hgnc/{id}",
+    "NCBIGene": "https://www.ncbi.nlm.nih.gov/gene/{id}",
+    "UniProtKB": "https://www.uniprot.org/uniprotkb/{id}",
+    "NIFSTD": "http://uri.neuinfo.org/nif/nifstd/{id}",
+    "biolink": "https://w3id.org/biolink/vocab/{id}",
+    "MGI": "http://www.informatics.jax.org/marker/{id}"
+  },
+  "curie_fallback_template": "https://identifiers.org/{prefix}:{id}",
+  "mapping_method_by_source": {
+    "_comment": "Mapping source (stats.alignment / item mapping_source) -> ner:mapping-method/* term for the ConceptMappingActivity.",
+    "trusted": "exact_lexical",
+    "local_hybrid": "hybrid_retrieval",
+    "local": "hybrid_retrieval",
+    "bioportal": "normalized_lexical",
+    "ols": "normalized_lexical",
+    "ols4": "human_review",
+    "_ols4": "curated mappings verified by a person against OLS4 (the worked example's stand-in for the remote step)"
+  },
+  "mapping_relation_by_tier": {
+    "exactMatch": "exact",
+    "closeMatch": "close",
+    "broadMatch": "broader",
+    "narrowMatch": "narrower",
+    "relatedMatch": "related"
+  },
+  "review_status_by_verdict": {
+    "pass": "accepted",
+    "flag": "accepted",
+    "fail": "rejected",
+    "flag_fixed": "corrected"
+  },
+  "secondary_resource_classes": {
+    "_comment": "resource-mode `mentions` lists -> class of the secondary entity",
+    "datasets": "DatasetEntity",
+    "benchmarks": "DatasetEntity",
+    "models": "ComputationalMethod",
+    "papers": "PublicationEntity",
+    "tools": "SoftwareEntity",
+    "_default": "ResearchEntity"
+  },
+  "media_types": {
+    ".pdf": "application/pdf",
+    ".txt": "text/plain",
+    ".md": "text/markdown",
+    ".html": "text/html",
+    ".htm": "text/html",
+    ".xml": "application/xml",
+    ".json": "application/json",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  },
+  "iri": {
+    "_comment": "How per-graph IRIs are minted. scheme 'uuid5': <base><uuid5(uuid5(NAMESPACE_URL, namespace_seed), name)>, deterministic \u2014 the same name always gives the same IRI, so a re-run reproduces the graph and the SAME entity in two papers gets the SAME IRI (merge without rewriting). 'global_names' are shared across papers; everything else uses 'paper_name' and is scoped to the paper. scheme 'slug' gives readable <base><paper>/<kind>-<slug> IRIs for debugging.",
+    "scheme": "uuid5",
+    "base": "https://brainkb.org/kb/",
+    "namespace_seed": "https://brainkb.org/kb/",
+    "global_names": {
+      "entity": "entity|{key}",
+      "concept": "concept|{iri}",
+      "ontology": "ontology|{acronym}",
+      "agent": "agent|{key}"
+    },
+    "paper_name": "{kind}|{paper}|{variant}|{local}",
+    "_paper": "{paper} is the DOI when the source has one, else the paper slug. {variant} is the extraction (task_type:ner_domain, e.g. 'ner:neuroscience', 'ner:cns-cells'; json_to_ttl --variant): two extractions of one paper are different readings, so their mentions, classifications, reviews and runs never share an IRI. paper_shared_kinds (the publication, its text, sentences, sections) are the same thing in every extraction and are shared.",
+    "paper_shared_name": "{kind}|{paper}|{local}",
+    "paper_shared_kinds": [
+      "publication",
+      "document_version",
+      "sentence",
+      "section"
+    ]
+  },
+  "relation_range_hints": {
+    "_comment": "Classes a relation's TARGET is expected to belong to (any subclass counts). A mismatch is a SHACL-style WARNING from validate_ttl.py, not a violation: extraction labels are coarse and the claims judge owns correctness.",
+    "has_phenotype": [
+      "Phenotype",
+      "ElectrophysiologicalFeature",
+      "MorphologyClass",
+      "Behavior"
+    ],
+    "expresses": [
+      "MolecularEntity",
+      "GenomicEntity",
+      "MolecularMarker"
+    ],
+    "expressed_in": [
+      "AnatomicalEntity",
+      "CellularEntity",
+      "Cell"
+    ],
+    "located_in": [
+      "AnatomicalEntity",
+      "BrainRegion",
+      "CellularComponent",
+      "GeographicLocation"
+    ],
+    "in_taxon": [
+      "OrganismEntity"
+    ],
+    "member_of": [
+      "Organization",
+      "ResearchEntity",
+      "CellPopulation",
+      "NeuralPopulation"
+    ],
+    "capable_of": [
+      "BiologicalProcess",
+      "NeuralProcess",
+      "Behavior"
+    ]
+  },
+  "labels": {
+    "_comment": "rdfs:label is a node's short NAME (what a graph viewer shows), never an explanation: structural nodes are named by kind ('annotation v1', 'grounding review', 'mapping decision CL:0000617', 'sentence 12'); what they relate is in their properties, and prose (evidence, rationale, summaries) is a string (rdfs:comment, ner:reviewComment, ner:sentenceText). A longer name keeps its full text as rdfs:comment and is cut to max_length; validate_ttl rejects labels over it.",
+    "max_length": 60
+  }
+}

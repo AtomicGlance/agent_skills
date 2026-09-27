@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -44,7 +45,7 @@ from typing import Optional
 
 try:
     import rdflib
-    from rdflib import OWL, RDF, RDFS, Literal, URIRef
+    from rdflib import OWL, RDF, RDFS, BNode, Literal, URIRef
 except ImportError:
     sys.stderr.write("rdflib is required: pip install 'rdflib>=7,<8'\n")
     sys.exit(2)
@@ -204,6 +205,38 @@ def check_policy(data: rdflib.Graph, ns: str, ttl_config: Path, ont: Optional[di
             if types and not any(t in want or (want & ont["ancestors"](t)) for t in types):
                 warns[f"{name} target outside relation_range_hints ({', '.join(hints[name])})"].add(
                     f"{s_} -> {o_}")
+    # identity: every node this pipeline mints is <iri.base><uuid>, cell output included.
+    # Only scheme "slug" (debugging) lifts the rule, and it is reported as a warning.
+    iri_cfg = cfg.get("iri") or {}
+    base = iri_cfg.get("base", "https://brainkb.org/kb/")
+    uuid_iri = re.compile(re.escape(base) + r"[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    bucket = warns if iri_cfg.get("scheme") == "slug" else issues
+    # no blank nodes, ever: an unnamed node cannot be merged, referenced or reviewed
+    # across papers. Not lifted by scheme "slug" either.
+    for s_, p_, o_ in data:
+        for x in (s_, o_):
+            if isinstance(x, BNode):
+                types = ", ".join(sorted(str(t) for t in data.objects(x, RDF.type))) or "untyped"
+                issues["blank node; every node must be a <base><uuid> IRI (ttl_config.json iri)"].add(
+                    f"_:{x} ({types}) via {p_}")
+    for s_, t_ in data.subject_objects(RDF.type):
+        if isinstance(s_, BNode):
+            continue
+        ss = str(s_)
+        if ss.startswith(ns):  # ontology vocabulary / controlled individuals
+            continue
+        if (ss.startswith(base) or str(t_).startswith(ns)) and not uuid_iri.match(ss):
+            bucket[f"instance IRI is not <{base}><uuid> (ttl_config.json iri)"].add(ss)
+    for o_ in set(data.objects()):
+        if isinstance(o_, URIRef) and str(o_).startswith(base) and not uuid_iri.match(str(o_)):
+            bucket[f"instance IRI is not <{base}><uuid> (ttl_config.json iri)"].add(str(o_))
+    # labels are names, not explanations: prose belongs in a string property
+    cap = int((cfg.get("labels") or {}).get("max_length") or 0)
+    if cap:
+        for s_, l_ in data.subject_objects(RDFS.label):
+            if len(str(l_)) > cap:
+                issues[f"rdfs:label longer than {cap} chars (ttl_config.json labels): put prose in "
+                       f"rdfs:comment / a string property"].add(f"{s_}: {str(l_)[:80]}")
     generic = set(cfg.get("generic_keys") or [])
     for e, k in data.subject_objects(N.normalizedEntityKey):
         if str(k) in generic:

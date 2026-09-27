@@ -544,6 +544,9 @@ class TrustedMapper:
         guard = tcfg.get("abbreviation_guard") or {}
         self.abbrev_len = int(guard.get("max_length", 0))
         self.abbrev_needs_route = bool(guard.get("require_label_route", True))
+        # IRIs that are in a trusted file but are not domain concepts (schema enum
+        # values, e.g. BKE AbbreviationEntityType#gene): never a mapping target
+        self.exclude = [re.compile(x) for x in tcfg.get("exclude_iri_patterns") or [] if not x.startswith("_")]
         routing = cfg.get("label_routing") or {}
         self.always = {p.upper() for p in routing.get("always_allowed_prefixes") or []}
         self.routing = {k: [p.upper() for p in v] for k, v in _clean(routing).items()
@@ -579,6 +582,8 @@ class TrustedMapper:
         for src_name, key, iri, prefix, mt, lab in self.lexicon.query([k for k, _ in variants]):
             src = self.by_name.get(src_name)
             if src is None or not src.admits(label) or mt not in self.match_on:
+                continue
+            if any(x.search(iri) for x in self.exclude):
                 continue
             p = prefix.upper()
             if route is not None and p not in route and p not in self.always:
@@ -760,7 +765,10 @@ class ConceptMapper:
             for f in ("ontology_id", "ontology_label", "ontology"):
                 it[f] = None
             it["concept_mapping_provenance"] = "unmapped"
-            it.setdefault("alignment_method", "direct_tool_call")
+            # the truthful reason for THIS run, replacing any stale one
+            # (e.g. a pre-mapping "validation_failed" stamp)
+            it["alignment_method"] = "no_match"
+            it["mapping_sources_tried"] = list(self.sources)
             self.counts["unmapped"] += 1
 
     @staticmethod

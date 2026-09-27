@@ -173,6 +173,11 @@ def validate_item(item: dict, *, strict: bool = True) -> tuple[bool, Optional[st
     # explicit unmapped/skipped — nothing to validate
     if prov in ("unmapped", "skipped") and not oid:
         return True, None
+    if not oid and not prov:
+        # not mapped yet (normalize_result runs before concept mapping in host mode):
+        # nothing to validate, and stamping it "validation_failed" would mislabel an
+        # honest gap once the mapper also finds nothing
+        return True, None
     if not oid:
         return False, "no ontology_id but provenance not unmapped/skipped"
 

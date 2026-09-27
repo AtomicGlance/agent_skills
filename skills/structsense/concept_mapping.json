@@ -62,7 +62,11 @@
       "max_length": 4,
       "require_label_route": true
     },
-    "_abbreviation_guard": "A query of <= max_length alphanumeric characters (PFC, LTP, V1) matches exact synonyms/symbols in many ontologies (FBbt 'prefollicle cell' for PFC). It is only mapped \u2014 and only used to derive a key \u2014 when the item's label has a label_routing entry, so the route decides which ontologies may answer."
+    "_abbreviation_guard": "A query of <= max_length alphanumeric characters (PFC, LTP, V1) matches exact synonyms/symbols in many ontologies (FBbt 'prefollicle cell' for PFC). It is only mapped \u2014 and only used to derive a key \u2014 when the item's label has a label_routing entry, so the route decides which ontologies may answer.",
+    "exclude_iri_patterns": [
+      "^https://identifiers\\.org/brain-bican/vocab/[A-Za-z]+#"
+    ],
+    "_exclude_iri_patterns": "Regexes over candidate IRIs that are never mapping targets: terms a trusted file declares that are not domain concepts. BKE's '<Enum>#<value>' IRIs (AbbreviationEntityType#gene, AuthorityType#NCBI, ANATOMICALDIRECTION#..., Region#...) are schema permissible values; matching them maps the generic word 'gene' to an enum value. Applied at query time, no re-index."
   },
   "label_routing": {
     "_comment": "Extractor label -> id prefixes acceptable for that label, in preference order. A FILTER, never a reordering of trusted ontologies (priority.md decides that): a candidate under a listed prefix, or under the trusted row's own CURIE prefix, is accepted. Labels absent here accept any prefix. The same list is passed to remote mappers as their ontology filter.",
