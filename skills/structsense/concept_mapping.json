@@ -1,0 +1,205 @@
+{
+  "_comment": "Concept-mapping configuration (scripts/concept_mapping.py, references/ontology-mapping.md). Every mapping is still TOOL-ONLY (SKILL.md rule 15): a trusted ontology file is a tool \u2014 a match is a lookup in a curated artifact, never model knowledge. Edit this file, not code.",
+  "version": "1.0.0",
+  "sources_priority": [
+    "trusted",
+    "local_hybrid",
+    "bioportal"
+  ],
+  "_sources_priority": "Order in which mapping sources are consulted. An item is sent to the next source only if every earlier one left it unmapped. Allowed: trusted, local_hybrid, bioportal, ols. Remove a source to disable it; put 'trusted' last to use it only as a fallback.",
+  "trusted_ontologies": {
+    "directory": "trusted_ontologes",
+    "_directory": "Relative to the skill root (or absolute). Every file listed below must live here.",
+    "priority_file": "trusted_ontologes/priority.md",
+    "_priority_file": "The editable priority table (Priority | Name | File | CURIE prefix | Labels | Notes). It is the ONLY place trusted ontologies and their order are defined.",
+    "strategy": "priority",
+    "_strategy": "'priority': the highest-priority ontology (trusted_ontologes/priority.md) with ANY accepted match wins; label_routing order breaks ties inside one file. 'best_match': the strongest match type across all eligible ontologies wins; priority breaks ties.",
+    "match_on": [
+      "label",
+      "exact_synonym",
+      "symbol",
+      "local_name"
+    ],
+    "_match_on": "Which OWL annotations count as a match, strongest first. Add related_synonym / narrow_synonym / broad_synonym to widen recall; their tiers are set in match_type_tiers, so a weaker match is never written as exactMatch.",
+    "singularize_query": true,
+    "include_deprecated": false,
+    "match_properties": {
+      "_comment": "Annotation property IRIs that feed each match type. Add your ontology's properties here (e.g. skos:altLabel) rather than in code.",
+      "label": [
+        "http://www.w3.org/2000/01/rdf-schema#label",
+        "http://www.w3.org/2004/02/skos/core#prefLabel"
+      ],
+      "exact_synonym": [
+        "http://www.geneontology.org/formats/oboInOwl#hasExactSynonym"
+      ],
+      "symbol": [
+        "http://purl.obolibrary.org/obo/IAO_0000028"
+      ],
+      "related_synonym": [
+        "http://www.geneontology.org/formats/oboInOwl#hasRelatedSynonym",
+        "http://www.w3.org/2004/02/skos/core#altLabel"
+      ],
+      "narrow_synonym": [
+        "http://www.geneontology.org/formats/oboInOwl#hasNarrowSynonym"
+      ],
+      "broad_synonym": [
+        "http://www.geneontology.org/formats/oboInOwl#hasBroadSynonym"
+      ]
+    },
+    "deprecated_property": "http://www.w3.org/2002/07/owl#deprecated",
+    "entity_types": [
+      "http://www.w3.org/2002/07/owl#Class",
+      "http://www.w3.org/2004/02/skos/core#Concept"
+    ],
+    "_entity_types": "rdf:type values that make a node a mappable term.",
+    "split_camel_case": true,
+    "_split_camel_case": "Also index 'ParcellationTerm' as 'parcellation term' (LinkML/schema-style labels).",
+    "lexicon_dir": "trusted_ontologes/lexicon",
+    "_lexicon_dir": "Where `index` writes <name>.tsv.gz (one flat lexicon per ontology) and lexicon.sqlite (the lookup index). Regenerable; safe to delete.",
+    "index_local_name_when_unlabeled": true,
+    "_index_local_name_when_unlabeled": "Some ontologies (SCIO, NEO, BRAIN-COF) name classes only in the IRI (\u2026/AdhesiveRemovalTest). When a class has no label, index its IRI local name as match type 'local_name'.",
+    "abbreviation_guard": {
+      "max_length": 4,
+      "require_label_route": true
+    },
+    "_abbreviation_guard": "A query of <= max_length alphanumeric characters (PFC, LTP, V1) matches exact synonyms/symbols in many ontologies (FBbt 'prefollicle cell' for PFC). It is only mapped \u2014 and only used to derive a key \u2014 when the item's label has a label_routing entry, so the route decides which ontologies may answer."
+  },
+  "label_routing": {
+    "_comment": "Extractor label -> id prefixes acceptable for that label, in preference order. A FILTER, never a reordering of trusted ontologies (priority.md decides that): a candidate under a listed prefix, or under the trusted row's own CURIE prefix, is accepted. Labels absent here accept any prefix. The same list is passed to remote mappers as their ontology filter.",
+    "CellType": [
+      "CL",
+      "PCL"
+    ],
+    "CellClass": [
+      "CL",
+      "PCL"
+    ],
+    "CellSubtype": [
+      "PCL",
+      "CL"
+    ],
+    "CellOntologyTerm": [
+      "CL",
+      "PCL"
+    ],
+    "CellLine": [
+      "CLO",
+      "BTO"
+    ],
+    "BrainRegion": [
+      "UBERON"
+    ],
+    "CorticalLayer": [
+      "UBERON"
+    ],
+    "NervousSystemPart": [
+      "UBERON"
+    ],
+    "NeuralCircuit": [
+      "UBERON"
+    ],
+    "Anatomy": [
+      "UBERON"
+    ],
+    "CellularStructure": [
+      "GO",
+      "UBERON"
+    ],
+    "Synapse": [
+      "GO"
+    ],
+    "Species": [
+      "NCBITaxon"
+    ],
+    "DevelopmentalStage": [
+      "UBERON",
+      "MmusDv",
+      "HsapDv"
+    ],
+    "Disease": [
+      "MONDO",
+      "DOID"
+    ],
+    "Phenotype": [
+      "HP",
+      "MP"
+    ],
+    "Chemical": [
+      "CHEBI"
+    ],
+    "Drug": [
+      "CHEBI",
+      "DRON"
+    ],
+    "Neurotransmitter": [
+      "CHEBI"
+    ],
+    "Neuropeptide": [
+      "CHEBI",
+      "PR"
+    ],
+    "Protein": [
+      "PR"
+    ],
+    "IonChannel": [
+      "PR"
+    ],
+    "Gene": [
+      "HGNC",
+      "NCBIGene"
+    ],
+    "LineageMarker": [
+      "HGNC",
+      "NCBIGene",
+      "PR"
+    ],
+    "Method": [
+      "OBI",
+      "EFO"
+    ],
+    "ProfilingMethod": [
+      "OBI",
+      "EFO"
+    ],
+    "BehavioralAssay": [
+      "OBI",
+      "NBO",
+      "COGAT",
+      "COGPO"
+    ],
+    "Phenomenon": [
+      "GO",
+      "NBO",
+      "COGAT"
+    ],
+    "always_allowed_prefixes": [
+      "BKE"
+    ],
+    "Person": [],
+    "Organization": [],
+    "Location": [],
+    "Product": [],
+    "Event": [],
+    "Date": [],
+    "Time": [],
+    "Money": [],
+    "Percent": [],
+    "Law": [],
+    "Language": [],
+    "_general_domain": "General-domain labels route to [] \u2014 no trusted (biomedical) ontology may answer for a Person or an Organization; remote sources are still consulted (use a general-domain mapper there, e.g. a Wikidata-backed local service)."
+  },
+  "match_type_tiers": {
+    "_comment": "Honest skos tier implied by HOW the tool matched, used when no judge or kg_plan set one. A narrow synonym of T names something narrower than T, so T is BROADER than the entity.",
+    "label": "exactMatch",
+    "exact_synonym": "exactMatch",
+    "related_synonym": "relatedMatch",
+    "narrow_synonym": "broadMatch",
+    "broad_synonym": "narrowMatch",
+    "symbol": "exactMatch",
+    "local_name": "closeMatch"
+  },
+  "remote": {
+    "local_hybrid_url": "http://localhost:8000",
+    "max_results": 1
+  }
+}
