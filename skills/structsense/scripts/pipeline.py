@@ -639,7 +639,9 @@ def _main():
                     help="skip the corpus roll-up even with several inputs")
     ap.add_argument("--corpus-out", default=None,
                     help="output stem for the roll-up (default: <out dir>/corpus_synthesis)")
-    ap.add_argument("--extractor", required=True, help="extractor model string")
+    ap.add_argument("--extractor", default=None,
+                    help="extractor model string. Default inside Claude Code: claude-code (the `claude` "
+                         "CLI, no API key); elsewhere required")
     ap.add_argument("--judge", default=None,
                     help="default judge model (omit to auto-approve). With the default --judge-mode "
                          "ensemble this is every panel member's model unless --judge-models says otherwise")
@@ -703,6 +705,17 @@ def _main():
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     mapper = None if args.mapper == "none" else args.mapper
+    # Inside Claude Code the session's own model runs every LLM stage (never
+    # OpenRouter unless a model is named); the judges too, so they are not skipped.
+    from llm_client import default_model
+    host = default_model()
+    if not args.extractor:
+        if not host:
+            raise SystemExit("--extractor is required outside Claude Code (e.g. openrouter/<model>); "
+                             "or run in host-model mode: python -m scripts.batch")
+        args.extractor = host
+        if args.judge is None:
+            args.judge = host
 
     ner_models = (
         [m.strip() for m in args.ner_models.split(",") if m.strip()]

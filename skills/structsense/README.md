@@ -494,6 +494,29 @@ mediator in every paper *and* an outcome in every paper is contested.
 
 ---
 
+## Corpus runs: many papers, one or more NER variants (0.10)
+
+Ask for it in plain words ("extract neuroscience and cell NER from ~/papers, save to
+~/out") and the skill runs `scripts/batch.py`:
+
+```bash
+python -m scripts.batch init --input ~/papers --variants neuroscience,cns-cells --out ~/out --model <id>
+python -m scripts.batch next --manifest ~/out/.structsense/batch.json     # host mode, repeat until "done"
+python -m scripts.batch run  --manifest ~/out/.structsense/batch.json     # headless (claude-code in Claude Code)
+python -m scripts.batch status --manifest ~/out/.structsense/batch.json
+```
+
+- One output folder per variant (`~/out/neuroscience_output`, `~/out/cns_cells_output`,
+  or your own via `--out-map`), one validated `<stem>.ttl` per paper, written the
+  moment that paper is done, plus `corpus_synthesis.{json,md}` at the end.
+- Progressive: the agent gets one small task at a time (a chunk, a masked chunk for
+  recall, the kg_plan, one judge packet), so a 200-paper run never needs a paper in
+  context. The manifest is saved after every step; stop and restart at will;
+  `retry <stem>` redoes one paper; parallel agents take `next --paper <stem>`.
+- Extraction names each surface once; `scripts/expand_mentions.py` finds every
+  occurrence with exact offsets, robust to PDF line wraps and hyphenation, and skips
+  references, acknowledgements and funding text.
+
 ## Turtle output (0.9)
 
 One validated `<stem>.ttl` per paper — N papers, N files. Everything is an instance of

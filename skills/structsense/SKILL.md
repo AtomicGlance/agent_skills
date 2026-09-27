@@ -5,7 +5,7 @@ description: Extract structured information (named entities, key terms, resource
 license: Apache-2.0
 ---
 
-> **Skill version 0.9.0.** The deliverable of a NER / resource run is now **Turtle**: `<stem>.ttl`, instances of the bundled Named Entity Ontology with deterministic UUIDv5 IRIs, gated by OWL + SHACL checks (rule 18). Concept mapping consults the **trusted ontologies first**, in the order `trusted_ontologes/priority.md` gives, then the local hybrid service, then BioPortal (rule 10). Judging is a **weak-learner ensemble** whose critical judges are gates, not votes (rule 21). One prefix registry keeps prefixes consistent from extraction to representation (rule 19). Two things carry across every mode. **Concept mapping is mandatory and tool-only**: the pipeline cascades local hybrid → BioPortal → ask the user for an alternate URL → hard-stop, and items carrying `concept_mapping_provenance: "llm_knowledge"` are demoted to `unmapped`, because a hallucinated IRI is worse than an honest gap. **ABCD/HBCD mode** (rule 16) maps a paper's own wording to the NBDC/NDA dictionary using the instrument, respondent, metric and release it states, keeps only what that study did itself, and emits a cross-paper synthesis whose every row carries its provenance. Legacy outputs can be brought up to spec via `python -m scripts.normalize_result <file> --input <text> --llm-model <model>` (idempotent). See [CHANGELOG.md](CHANGELOG.md).
+> **Skill version 0.10.0.** The deliverable of a NER / resource run is now **Turtle**: `<stem>.ttl`, instances of the bundled Named Entity Ontology with deterministic UUIDv5 IRIs, gated by OWL + SHACL checks (rule 18). Concept mapping consults the **trusted ontologies first**, in the order `trusted_ontologes/priority.md` gives, then the local hybrid service, then BioPortal (rule 10). Judging is a **weak-learner ensemble** whose critical judges are gates, not votes (rule 21). One prefix registry keeps prefixes consistent from extraction to representation (rule 19). Two things carry across every mode. **Concept mapping is mandatory and tool-only**: the pipeline cascades local hybrid → BioPortal → ask the user for an alternate URL → hard-stop, and items carrying `concept_mapping_provenance: "llm_knowledge"` are demoted to `unmapped`, because a hallucinated IRI is worse than an honest gap. **ABCD/HBCD mode** (rule 16) maps a paper's own wording to the NBDC/NDA dictionary using the instrument, respondent, metric and release it states, keeps only what that study did itself, and emits a cross-paper synthesis whose every row carries its provenance. Legacy outputs can be brought up to spec via `python -m scripts.normalize_result <file> --input <text> --llm-model <model>` (idempotent). See [CHANGELOG.md](CHANGELOG.md).
 
 
 
@@ -86,6 +86,47 @@ model you can't be). Then `--extractor` and a key are genuinely required.
 When you do need to ask, name the exact variable and what breaks without it. "This
 needs an API key" is the ambiguous phrasing that sends users hunting for an
 OpenRouter account they don't need.
+
+## Corpus requests — one command, whatever the phrasing
+
+"Extract neuroscience and cell NER from ~/papers and save to ~/out", "run cell NER on
+these PDFs", "just neuroscience NER on this folder" are all the same job. Use
+`scripts/batch.py`; do not improvise per-paper scripts, lexicon tools or queue files
+(everything a past run had to invent is in it):
+
+```bash
+python -m scripts.batch init --input <file|dir> [--input ...] --variants neuroscience,cns-cells \
+    --out <dir> [--out-map neuroscience=<dir1>,cns-cells=<dir2>] --model <your model id>
+python -m scripts.batch next --manifest <dir>/.structsense/batch.json      # repeat until "done"
+python -m scripts.batch status --manifest <dir>/.structsense/batch.json
+```
+
+- **Variants** — `general`, `neuroscience`, `cns-cells` (aliases: neuro, cell, cells,
+  cell-ner, cns). "NER" with no domain on a neuroscience corpus means `neuroscience`;
+  "cell NER" means `cns-cells`. Several variants → one output dir each
+  (`<out>/<variant>_output`, or exactly where the user said via `--out-map`).
+- **Inputs** — any mix of PDF / XML (JATS) / DOCX / HTML / TXT in files or folders; one
+  paper per stem. Text is extracted once and shared by every variant.
+- **Host-model mode (you are the model)**: `next` runs every deterministic stage and
+  prints ONE task as JSON — `extract` (one chunk), `recall` (one masked chunk),
+  `kg_plan`, `judge` (one packet), `combiner` — with `prompt`, `read`, `write`. Read the
+  prompt once (it does not change between chunks), do the task, write the file, run
+  `next`. Never hold a whole paper in context. For extraction, name each distinct
+  surface + label at least once: `scripts/expand_mentions.py` finds every occurrence
+  with exact offsets. A malformed file is handed back with `retry_reason`.
+- **Progressive and resumable** — each paper's `<stem>.ttl` is written and gated the
+  moment its last task is done; the manifest is saved after every step; a re-run skips
+  papers whose TTL already passes; `retry <stem> [--from-stage ...]` resets one.
+  Parallel sub-agents: give each `next --paper <stem>` (tasks are claimed, never
+  handed out twice). Corpus roll-ups (`corpus_synthesis.{json,md}` per variant) are
+  written when the batch is done.
+- **Headless** — `python -m scripts.batch run --manifest ...` fulfils the same tasks
+  through `scripts/llm_client.py`. Inside Claude Code the default model is
+  `claude-code` (the `claude` CLI; no key). Use OpenRouter/Anthropic/OpenAI only when the
+  user names such a model. `pipeline.py` follows the same default.
+- **Report** per paper and variant from `status`: TTL path, gate result, mentions,
+  entities, mapped share; list `invalid` / `failed` jobs with their reason. Never
+  hand back an `.invalid.ttl` as a result.
 
 ## Quick decision flow
 
@@ -175,6 +216,41 @@ These prevent the most common failures.
 19. **One prefix means one namespace, everywhere.** Prefixes come from `scripts/prefixes.py` only — OBO prefixes, `ttl_config.json` `curie_expansions`, and each trusted file's own namespace under its priority.md CURIE prefix. A term keeps the prefix of its namespace whichever file it came from (cl.owl's UBERON terms are UBERON); a namespace nobody registered is never given a guessed prefix — it stays unmapped and is reported. `python -m scripts.prefixes check` must show 0 conflicts after adding an ontology.
 20. **Identity is deterministic.** Every instance IRI is `kb:<uuid5>`: entities from `entity|<normalizedEntityKey>`, concepts from `concept|<IRI>`, ontology hubs from `ontology|<ACRONYM>` — shared across papers — and everything else from `<kind>|<DOI>|<local>`. The same entity in two papers is the same node; so the key must be right: from `kg_plan.json`, else the trusted ontologies' preferred label for the one class the text denotes, else the algorithm (`references/key-normalization.md`).
 21. **Judges never fix; critical judges are gates.** One `fail` from grounding (script or LLM) drops an item; from claims, the claim. A mapping `fail` demotes the IRI (the item stays). Uncontested suggestions are applied by `judge_combine.py`; the combiner may only choose among judges' suggestions (unlicensed fixes are rejected) and escalates what the text does not settle. In host-model mode run each judge as its own pass over its own packet and say so (`"mode": "host_sequential"`).
+
+22. **A node label is a name, never an explanation.** `rdfs:label` is what a graph
+    viewer shows on the node: at most 60 characters (`ttl_config.json` `labels`), and
+    the gate rejects longer ones. Structural nodes are named by kind ("annotation v1",
+    "grounding review", "mapping decision CL:0000617", "sentence 12"). Prose —
+    evidence, rationale, summaries, glosses — is a string: `rdfs:comment`,
+    `ner:reviewComment`, `ner:sentenceText`. In kg_plan, `normalized_label` is the
+    canonical term (optionally "(ABBR)"); an explanation goes in `note`.
+23. **Every node is a UUID IRI, scoped to its extraction.** No blank nodes and no slug
+    IRIs (the gate rejects both). Entities and concepts are shared across papers;
+    mentions, classifications, reviews and runs are per paper AND per variant
+    (`json_to_ttl --variant`, default `task_type:ner_domain`), so the neuroscience and
+    cns-cells TTLs of one paper can sit in the same store without merging two readings
+    into one node. The publication, its text, sentences and sections are shared.
+24. **Scope and keys, learned on a real corpus.**
+    - Extract from the paper's own content — title, abstract, body, methods, figure and
+      table captions. Never from references, acknowledgements, funding / grant numbers,
+      author lists or affiliations (`expand_mentions` skips those sections).
+    - A bare generic noun ("cells", "neurons", "brain", "gene", "human", "disease") is
+      an entity only when the paper uses it for a specific referent; its key is then
+      that referent (`homo_sapiens`, `pyramidal_neuron`). Never prefix a DOI or paper
+      id to a key to get past the `generic_keys` guardrail — it breaks cross-paper
+      identity. The batch runner drops a generic kg_plan key and lets the trusted
+      ontology name the entity.
+    - Keys are singular (`calcium_dye`, not `calcium_dyes`); mass nouns and fields stay
+      as they are (`transcriptomics`).
+    - Use the extractor prompt's own label set. An invented label becomes
+      `ScientificNamedEntity` unless `label_class_map.json` maps it to a declared class.
+    - A cns-cells run keeps nested spans, sets `specificity` on every cell mention, and
+      states coordination (`coordinated_elements` with one `ontology_id` slot per
+      element) — the TTL writes a `ner:CoordinatedEntityMention` with component
+      mentions.
+    - Relations and causal claims are part of extraction, not an optional extra:
+      state them per mention (`relations`, `broader`, `cell_context`) and per chunk
+      (`causal_relations`); the kg_plan adds cross-sentence ones.
 
 ## Install
 
@@ -279,6 +355,8 @@ The files below are intentionally separated so you only load what the current ta
 - `ols_map.py` — EBI OLS client (no API key).
 - `local_hybrid_map.py` — client for a self-hosted BM25+dense mapping service (one POST, many terms).
 - `llm_client.py` — provider-agnostic LLM call (OpenAI / OpenRouter / Anthropic / Ollama / Gemini).
+- `batch.py` — **the corpus runner** (papers × variants): `init` / `next` (host mode: one task at a time) / `run` (headless; `claude-code` inside Claude Code) / `status` / `retry`. Resumable manifest, per-paper TTL written and gated as it finishes, claims for parallel workers, corpus roll-up per variant. See "Corpus requests".
+- `expand_mentions.py` — every occurrence of each extracted (surface, label) with exact offsets, whole-span sentences and sections; tolerant of PDF line wraps / hyphenation / NBSP, skips URLs and out-of-scope sections (references, acknowledgements, funding). Used by `batch.py`; CLI for a hand-written lexicon.
 - `pipeline.py` — reference end-to-end pipeline (extract → align → judge) wiring the helpers together. `--input` takes a file **or a directory** and is repeatable; several inputs run in turn, one failure does not abort the batch (exit 2 = partial, 1 = none succeeded), and the corpus roll-up runs at the end (rule 9b).
 - `abcd_context.py` — **context-aware mapping from a paper's wording to a dictionary variable**. `Dictionary.resolve()` answers "is this string a variable name?", which most papers never satisfy; this answers "which variable did this sentence mean?" by matching against dictionary *labels* with the instrument, respondent, metric and release the paper stated. Returns one variable, a family, a domain or an instrument table — never a guess — with the candidate list and thresholds attached. CLI: `match` / `instrument` / `stats`.
 

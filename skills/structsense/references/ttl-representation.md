@@ -68,11 +68,30 @@ Instances are `kb:<uuid5(uuid5(NAMESPACE_URL, "https://brainkb.org/kb/"), name)>
 | ontology concept | `concept|<conceptIRI>` | shared across papers |
 | ontology hub | `ontology|<ACRONYM>` | shared across papers |
 | agent / software | `agent|<id>` | shared across papers |
-| everything else (publication, mentions, sentences, reviews, decisions, causal) | `<kind>|<DOI>|<local id>` | this paper |
+| publication, document version, sentences, sections (`paper_shared_kinds`) | `<kind>|<DOI>|<local id>` | this paper, every extraction of it |
+| everything else (mentions, annotation versions, classifications, reviews, decisions, runs, causal) | `<kind>|<DOI>|<variant>|<local id>` | this paper AND this extraction |
+
+`<variant>` is `task_type:ner_domain` (`ner:neuroscience`, `ner:cns-cells`; override
+with `json_to_ttl --variant`). Without it, the neuroscience and cns-cells TTLs of the
+same paper minted the same IRI for "mention 3 of neuropixel": a store holding both
+showed one classification node with two labels, two confidences and two raw labels.
+Entities and concepts stay shared, which is the point: both readings are about the
+same entity.
 
 Deterministic: re-running a paper reproduces the same IRIs. `iri.scheme: "slug"`
-gives readable `kb/<paper-slug>/<kind>-<slug>` IRIs for debugging. Readable names
-always live in `rdfs:label`.
+gives readable `kb/<paper-slug>/<kind>-<slug>` IRIs for debugging only; the gate
+rejects them unless that scheme is set, and rejects **blank nodes always** — an
+unnamed node cannot be merged, referenced or reviewed.
+
+**Labels are names.** `rdfs:label` is what a graph viewer draws on the node, so it
+is short (≤ `labels.max_length`, 60) and never prose: entities carry their
+normalized label, mentions their surface form, structural nodes their kind
+("annotation v1", "classification CellType", "grounding review", "mapping decision
+CL:0000617", "sentence 12", "judge ensemble report"). What a node relates is in its
+properties; explanations are strings — `rdfs:comment`, `ner:reviewComment`,
+`ner:sentenceText`. A kg_plan `normalized_label` with a parenthetical gloss
+("L-phenylalanine (Phe; amino acid odorant; CS in some groups)") is split: the name
+keeps the abbreviation, the gloss becomes a comment; a plan `note` is a comment too.
 
 **Prefixes are one registry** (`scripts/prefixes.py`): OBO prefixes and
 `curie_expansions` from ttl_config.json, plus each trusted ontology's own
@@ -219,11 +238,14 @@ a molecular entity, …).
 |---|---|
 | OWL vocabulary | declared classes, properties and controlled terms only; domain/range under subclass closure; no untyped per-paper node as an object; one concept node per identifier |
 | SHACL (`default_ontology/named_entity_shapes.ttl`, with the ontology + RDFS inference) | entity: ≥1 mention, exactly one key matching the key grammar and not on the guardrail list, label, primary source; every match IRI backed by a resolved concept and every concept tiered; mention: surface, docv, offsets end > start and length = surface length, not orphaned; concept: IRI (anyURI), CURIE, ontology version; mapping decision provenance = "tool"; review: status, attributed judge; causal: cause ≠ effect, version back-link, booleans, interventional evidence for non-hypothetical; effect estimate: p in [0,1], CI lower ≤ upper |
+| identity & labels (policy) | every instance `<iri.base><uuid>`; no blank nodes; no `rdfs:label` over `labels.max_length` |
 | graph shape | rdfs:label on every per-paper node; one connected component |
 | `--check-ols` (optional) | every conceptIRI resolves in OLS4 — existence only; meaning is the mapping judge's |
 
-Warnings (unmapped entity with no gap comment, surface not in its sentence
-window) are reported and do not fail the gate. **0 violations before handoff.**
+Warnings (unmapped entity with no gap comment) are reported and do not fail the
+gate. A mention whose sentence does not contain its surface (a PDF sentence cut at
+a hyphenated line break) is repaired by the converter from the source text at the
+mention's offsets when `--source` is given. **0 violations before handoff.**
 Validate one paper per invocation (concept and entity nodes are shared by UUID,
 so a merged multi-paper file is also valid, but per-paper reports are clearer).
 

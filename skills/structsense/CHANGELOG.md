@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.10.0 — corpus runs that finish: progressive batches, a stricter gate, cell spans
+
+Learned on a 211-paper BICAN run (neuroscience + cns-cells). Every fix is in code
+or config; SKILL.md rules 22–24 and "Corpus requests" say how to use them.
+
+- **Corpus runner.** New `scripts/batch.py`: `init` (files/folders, any mix of
+  PDF/XML/DOCX/TXT; one or more variants, each with its own output dir), `next`
+  (host mode: runs the deterministic stages, hands the model ONE small task —
+  a chunk, a masked chunk, the kg_plan, a judge packet, the combiner), `run`
+  (headless, same tasks through `llm_client`; `claude-code` by default inside
+  Claude Code), `status`, `retry`. The manifest is saved after every step; each
+  paper's TTL is written and gated when it finishes; re-runs resume; parallel
+  workers claim tasks.
+- **Exhaustive mentions without counting.** New `scripts/expand_mentions.py`: the
+  extractor names each surface once, the script finds every occurrence (PDF line
+  wraps and hyphenation, NBSP, glued citation numbers), skips URLs and references /
+  acknowledgements / funding, gives each mention the sentence that holds its whole
+  span and its section.
+- **Identity.** Per-extraction IRI scoping (`<kind>|<DOI>|<variant>|<local>`): two
+  variants of one paper no longer collide into one node. No blank nodes, no slug
+  IRIs, UUIDs everywhere including the ABCD exporter.
+- **Labels are names.** Structural nodes get short kind names; prose moved to
+  `rdfs:comment`; glosses split out of entity names; kg_plan gains `note`; the gate
+  rejects labels over 60 characters.
+- **Cells.** Coordinated spans ("SST and PV interneurons") become a
+  `ner:CoordinatedEntityMention` with `coordinatedElementCount` and one component
+  mention per element, owned by the paper's entity for that element's concept and
+  carrying only that element's mapping decision; `-` slots stay honest gaps.
+- **Honest gaps.** An unmapped item says `no_match` (and which sources were tried),
+  not a stale `validation_failed` from a pre-mapping normalize.
+- **Mapping.** BKE schema enum values (`AbbreviationEntityType#gene`, ...) are
+  excluded (`exclude_iri_patterns`), so "gene" no longer maps to an enum value.
+- **Judging.** A relabel moves the kg_plan entry with it, so the entity keeps its
+  key, class and relations. The batch runner drops a generic kg_plan key instead of
+  failing the paper.
+- **Labels → classes.** 17 extractor labels seen in real runs now map to declared
+  classes; 4 redundant entries removed (a label that is a class resolves by itself).
+- `pipeline.py --extractor` defaults to `claude-code` inside Claude Code.
+
 ## 0.9.0 — Turtle is the deliverable; trusted ontologies first; a judge panel, not a score
 
 A NER or resource run now ends in `<stem>.ttl`: instances of the bundled Named
