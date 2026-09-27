@@ -73,7 +73,7 @@ if str(_SCRIPTS_DIR) not in sys.path:
 
 SKILL_DIR = _SCRIPTS_DIR.parent
 DEFAULT_CONFIG = SKILL_DIR / "concept_mapping.json"
-LEXICON_FORMAT = 4
+LEXICON_FORMAT = 5
 
 logger = logging.getLogger("concept_mapping")
 
@@ -154,6 +154,7 @@ def read_priority_table(path: Path) -> list[dict]:
 
 def norm(text: str) -> str:
     s = "".join(_GREEK.get(ch, ch) for ch in unicodedata.normalize("NFKC", text or ""))
+    s = "".join(" " if ord(ch) > 127 and not ch.isalnum() else ch for ch in s)  # en dash etc. separate words
     s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii").lower()
     return re.sub(r"[^a-z0-9]+", " ", s).strip()
 
@@ -759,7 +760,7 @@ class ConceptMapper:
                 self.history.append(f"trusted:{len(self.trusted.available())} ontologies")
                 still = []
                 for it in pending:
-                    m = self.trusted.lookup(it[surface_key], it.get("label"))
+                    m = self.trusted.lookup(_q(it, surface_key), it.get("label"))
                     if m.get("concept_mapping_provenance") == "tool":
                         self._apply(it, m)
                         self.counts["trusted"] += 1
@@ -781,7 +782,20 @@ class ConceptMapper:
                 if route == []:  # a general-domain label (Person, Date, ...): no ontology target
                     still.extend(group)
                     continue
-                uniq = list(dict.fromkeys(it[surface_key] for it in group))
+                uniq = list(dict.fromkeys(_q(it, surface_key) for it in group))
+                # a bare abbreviation ("DS", "PV") means nothing to a remote search
+                # without the paper's expansion: DS -> Dravet syndrome. Leave it to the
+                # trusted route / kg_plan instead of guessing.
+                specific = bool(_clean((self.cfg.get("remote") or {}).get("label_ontologies")).get(label or "")
+                                or (self.trusted.route(label) if self.trusted else None))
+                if self.trusted and self.trusted.abbrev_len and not specific:
+                    short = [t for t in uniq if len(re.sub(r"[^A-Za-z0-9]", "", t)) <= self.trusted.abbrev_len]
+                    if short:
+                        still.extend(it for it in group if _q(it, surface_key) in short)
+                        group = [it for it in group if _q(it, surface_key) not in short]
+                        uniq = [t for t in uniq if t not in short]
+                    if not uniq:
+                        continue
                 try:
                     kw = {"accept": self.representable} if source == "bioportal" else {}
                     results = client.map_batch(uniq, ontologies=route, max_results=self.max_results, **kw)
@@ -791,7 +805,7 @@ class ConceptMapper:
                     continue
                 by_term = dict(zip(uniq, results))
                 for it in group:
-                    m = by_term.get(it[surface_key]) or {}
+                    m = by_term.get(_q(it, surface_key)) or {}
                     if m.get("concept_mapping_provenance") == "tool" and m.get("ontology_id"):
                         self._apply(it, {**m, "alignment_method": "direct_tool_call",
                                          "mapping_source": source})
@@ -855,8 +869,59 @@ def config_hash(cfg: dict) -> str:
     return "sha256:" + h.hexdigest()
 
 
+def _q(it: dict, surface_key: str) -> str:
+    """What to look up: the paper's own expansion of an abbreviation when it defines
+    one ("Down syndrome (DS)" -> DS is looked up as "Down syndrome"), else the surface."""
+    return it.get("mapping_query") or it[surface_key]
+
+
+_DEF = re.compile(r"([A-Za-z0-9][A-Za-z0-9\-–' ]{2,80}?)\s*\(\s*([A-Za-z][A-Za-z0-9\-+/]{1,11}?)s?\s*[;,)]")
+
+
+def abbreviation_table(texts) -> dict[str, str]:
+    """Abbreviations the document defines, as {SHORT: long form} (Schwartz & Hearst
+    2003, simplified): "long form (SF)" where SF's letters occur in order in the long
+    form and its first letter starts the long form's first word. Ambiguous
+    definitions (two long forms for one SF) are dropped."""
+    found: dict[str, set] = {}
+    for t in texts:
+        for m in _DEF.finditer(str(t or "")):
+            lf, sf = m.group(1).strip(), m.group(2)
+            if not any(ch.isupper() for ch in sf):
+                continue
+            words = lf.split()
+            chars = [c.lower() for c in sf if c.isalnum()]
+            best = None
+            for k in range(len(words) - 1, max(-1, len(words) - len(chars) - 3), -1):
+                cand = " ".join(words[k:])
+                if cand[:1].lower() != chars[0]:
+                    continue
+                pos, ok = 0, True
+                for c in chars:
+                    pos = cand.lower().find(c, pos)
+                    if pos < 0:
+                        ok = False
+                        break
+                    pos += 1
+                if ok:
+                    best = cand
+                    break
+            if best and best.lower() != sf.lower() and len(best) > len(sf):
+                found.setdefault(sf, set()).add(best.strip(" -"))
+    return {sf: next(iter(lfs)) for sf, lfs in found.items() if len({x.lower() for x in lfs}) == 1}
+
+
 def map_result(result: dict, mapper: ConceptMapper, *, only_unmapped: bool = False) -> dict:
     started = _utc_now()
+    items = [it for key in ("entities", "key_terms") for it in result.get(key) or [] if isinstance(it, dict)]
+    abbrev = abbreviation_table(dict.fromkeys(it.get("sentence") for it in items if it.get("sentence")))
+    for it in items:
+        surf = (it.get("entity") or it.get("term") or "").strip()
+        base = surf[:-1] if surf.endswith("s") and surf[:-1] in abbrev else surf
+        if base in abbrev and not it.get("mapping_query"):
+            it["mapping_query"] = abbrev[base]  # provenance: what was actually looked up
+    result.setdefault("stats", {})["abbreviations_defined"] = len(abbrev)
+
     for key, surf in (("entities", "entity"), ("key_terms", "term")):
         if result.get(key):
             mapper.map_items(result[key], surf, only_unmapped=only_unmapped)

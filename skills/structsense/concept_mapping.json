@@ -190,7 +190,29 @@
     "Percent": [],
     "Law": [],
     "Language": [],
-    "_general_domain": "General-domain labels route to [] \u2014 no trusted (biomedical) ontology may answer for a Person or an Organization; remote sources are still consulted (use a general-domain mapper there, e.g. a Wikidata-backed local service)."
+    "_general_domain": "General-domain labels route to [] \u2014 no trusted (biomedical) ontology may answer for a Person or an Organization; remote sources are still consulted (use a general-domain mapper there, e.g. a Wikidata-backed local service).",
+    "Software": [
+      "SWO",
+      "EDAM"
+    ],
+    "Tool": [
+      "SWO",
+      "EDAM",
+      "OBI"
+    ],
+    "Dataset": [
+      "IAO",
+      "EDAM"
+    ],
+    "StatisticalMethod": [
+      "STATO",
+      "OBI"
+    ],
+    "Algorithm": [
+      "SWO",
+      "EDAM",
+      "STATO"
+    ]
   },
   "match_type_tiers": {
     "_comment": "Honest skos tier implied by HOW the tool matched, used when no judge or kg_plan set one. A narrow synonym of T names something narrower than T, so T is BROADER than the entity.",

@@ -106,6 +106,7 @@ class TtlConfig:
 
     def __init__(self, path: Path = DEFAULT_TTL_CONFIG):
         raw = json.loads(Path(path).read_text())
+        self.raw = raw
         self.path = str(path)
         self.ner_ns = raw.get("ontology_namespace", "https://brainkb.org/ner/")
         self.default_tier = raw.get("default_match_tier", "closeMatch")
@@ -157,6 +158,9 @@ _INVARIANT_PLURALS: set[str] = set()   # filled from key_synonyms.json "invarian
 def fold(text: str) -> str:
     """Unicode-fold to lowercase ASCII with single underscores (key-normalization steps 2-3)."""
     s = "".join(_GREEK.get(ch, _GREEK.get(ch.lower(), ch)) for ch in text or "")
+    # non-ASCII punctuation (en/em dash, minus, slash-like) separates words; only
+    # letters are transliterated. "excitation–inhibition" -> excitation_inhibition
+    s = "".join(" " if ord(ch) > 127 and not ch.isalnum() else ch for ch in s)
     s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii")
     s = re.sub(r"[^a-z0-9]+", "_", s.lower())
     return s.strip("_")
@@ -426,11 +430,20 @@ def load_declared_classes(ontology_path: Path) -> set[str]:
     return load_ontology_info(ontology_path)[0]
 
 
+_VOCAB: dict[str, set[str]] = {}
+
+
 def load_ontology_info(ontology_path: Path) -> tuple[set[str], Optional[str]]:
     g = Graph()
     g.parse(str(ontology_path))
     classes = {str(c)[len(str(NER)):] for c in g.subjects(RDF.type, OWL.Class) if str(c).startswith(str(NER))}
     version = next((str(v) for v in g.objects(URIRef(str(NER)), OWL.versionInfo)), None)
+    _VOCAB.clear()  # controlled vocabularies: ner:<scheme>/<term> individuals
+    for s in set(g.subjects()):
+        loc = str(s)[len(str(NER)):] if str(s).startswith(str(NER)) else ""
+        if "/" in loc:
+            scheme, term = loc.split("/", 1)
+            _VOCAB.setdefault(scheme, set()).add(term)
     return classes, version
 
 
@@ -480,6 +493,10 @@ class TurtleBuilder:
                  variant: Optional[str] = None, source_text: Optional[str] = None):
         self.cfg = cfg or TtlConfig()
         self.source_text = source_text
+        self.vocab = _VOCAB
+        from group_by_entity import document_vocab, use_vocab, vocab_of_items
+        use_vocab(document_vocab([source_text]) if source_text else
+                  vocab_of_items(result.get("entities") or []))
         self.schema_version = ontology_version
         self.config_hash = config_hash()
         self.result = result
@@ -624,8 +641,10 @@ class TurtleBuilder:
         self.emit_authors()
         srcs = self.meta.get("metadata_sources") or {}
         if srcs:
-            self.add(self.pub, RDFS.comment, Literal("metadata read from: " + "; ".join(
-                f"{k} <- {v}" for k, v in sorted(srcs.items()) if k != "paper_title")))
+            biblio = ("title", "doi", "pmid", "pmcid", "year", "publication_date", "journal", "authors")
+            shown = [f"{k} <- {v}" for k, v in sorted(srcs.items()) if k in biblio]
+            if shown:
+                self.add(self.pub, RDFS.comment, Literal("metadata read from: " + "; ".join(shown)))
         self.emit_document_versions()
         task = self.result.get("task_type") or ("resource" if _resource_items(self.result) else "ner")
         self.add(self.run, RDF.type, NER.NERExtractionActivity)
@@ -1710,6 +1729,32 @@ class TurtleBuilder:
             causal.append(cr)
         return causal
 
+    def normalize_causal(self, cr: dict, ver) -> dict:
+        """Causal values -> the ontology's own vocabulary: declared as is, else through
+        ttl_config causal_value_aliases, else dropped (rdfs:comment keeps the raw word)."""
+        aliases = self.cfg.raw.get("causal_value_aliases") or {}
+        schemes = {"type": "causal-type", "polarity": "causal-polarity", "modality": "causal-modality",
+                   "directness": "causal-directness", "evidence_basis": "causal-basis"}
+        for field, scheme in schemes.items():
+            vals = cr.get(field)
+            if vals is None:
+                continue
+            many = isinstance(vals, list)
+            out = []
+            for v in (vals if many else [vals]):
+                raw = str(v).strip()
+                w = re.sub(r"[^a-z0-9]+", "_", raw.lower()).strip("_")
+                w = w if w in self.vocab.get(scheme, ()) else (aliases.get(field) or {}).get(w, w)
+                if w in self.vocab.get(scheme, ()):
+                    out.append(w)
+                elif raw:
+                    self.add(ver, RDFS.comment, Literal(f"{field} as extracted: {raw!r} (not in ner:{scheme}/*)"))
+                    self.warnings.append(f"causal {field} {raw!r} is not in ner:{scheme}; not written")
+            cr[field] = out if many else (out[0] if out else None)
+        if isinstance(cr.get("evidence_basis"), str):
+            cr["evidence_basis"] = [cr["evidence_basis"]]
+        return cr
+
     def build_causal(self, extra: Optional[list[dict]] = None):
         rel_nodes: dict[str, URIRef] = {}
         planned = list(self.plan.get("causal_relations") or [])
@@ -1748,6 +1793,7 @@ class TurtleBuilder:
             self.add(ver, PROV.generatedAtTime, asserted)
             self.add(ver, NER.validFrom, asserted)
             self.add(ver, NER.causalNegated, Literal(bool(cr.get("negated", False))))
+            cr = self.normalize_causal(dict(cr), ver)
             bases = [b for b in (cr.get("evidence_basis") or []) if b]
             hypothetical = cr.get("hypothetical")
             if hypothetical is None:

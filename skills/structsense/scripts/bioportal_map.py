@@ -89,6 +89,9 @@ class BioPortalMapper:
             "display_context": "false",
             "include": "prefLabel,definition",
             "pagesize": max_results,
+            # exact prefLabel/synonym matches only: fuzzy hits are how "mouse" became
+            # Mouse mammary tumor virus (BIOPORTAL_EXACT=0 to relax)
+            "require_exact_match": "false" if os.environ.get("BIOPORTAL_EXACT", "1") == "0" else "true",
         }
         if ontologies:
             params["ontologies"] = ",".join(ontologies)

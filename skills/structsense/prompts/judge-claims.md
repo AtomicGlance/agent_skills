@@ -29,7 +29,12 @@ Per claim, reading its sentences and, when needed, the SOURCE TEXT:
 - fail — a world-knowledge edge the paper never states ("known biology" is
   never a license), cause and effect reversed, the wrong RO predicate for the
   pair (has_participant from a drug to a cell), or a claim the paper only
-  CITES from other work. Fail drops the claim.
+  ATTRIBUTES to other work without asserting it ("Smith et al. reported X" as
+  background it does not itself endorse). Fail drops the claim.
+- Reviews and perspectives: what the paper asserts in its OWN voice is its
+  contribution, even when it carries citations — pass it, with evidence_basis
+  author_assertion and hypothetical true (a cited result is not this paper's
+  intervention). Fail only the attributed-background case above.
 
 OUTPUT strict JSON only:
 {"judge":"claims","model":"<id>","mode":"host_sequential|parallel",

@@ -113,7 +113,13 @@ Entities are only half of what the paper says. On each entity item you MAY add:
 and at the top level:
   "causal_relations": [{"cause": "<mention>", "effect": "<mention>",
       "mediators": ["<mention>"], "polarity": "positive|negative|neutral|unspecified",
-      "type": "<promotes|inhibits|causes|induces|suppresses|increases-like verbs: activates, negatively_regulates, ...>",
+      "type": "<exactly one of: causes, induces, triggers, leads_to, results_in, contributes_to,
+               promotes, activates, positively_regulates, enables, necessary_for, sufficient_for,
+               inhibits, suppresses, negatively_regulates, prevents, protects_against,
+               alleviates, exacerbates, mediates>  (no other words: 'increases' is
+               positively_regulates, 'reduces'/'impairs' negatively_regulates, 'alters' contributes_to)",
+      "modality": "<asserted|probable|possible|uncertain|conditional|hypothetical>",
+      "directness": "<direct|indirect|unspecified>",
       "evidence_basis": "<experimental_intervention|genetic_perturbation|pharmacological_perturbation|
                           randomized_intervention|dose_response|observational_adjusted|
                           observational_unadjusted|longitudinal|mediation_analysis|

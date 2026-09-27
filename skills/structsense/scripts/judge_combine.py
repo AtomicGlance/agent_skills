@@ -77,7 +77,11 @@ def load_reviews(paths: list[Path]) -> dict[str, dict]:
             if not iid or it.get("verdict") not in VERDICT_S:
                 raise InputError(f"{p}: item {it!r} needs an id and a verdict in {sorted(VERDICT_S)}")
             if iid.lower() in into["_ids"]:
-                raise InputError(f"judge '{j}' reviewed {iid!r} twice ({p})")
+                # the same id in two packet parts (or twice in one): the first verdict
+                # stands; a model repeating itself must not fail the paper
+                print(f"judge_combine: judge '{j}' reviewed {iid!r} twice ({p}); first verdict kept",
+                      file=sys.stderr)
+                continue
             into["_ids"].add(iid.lower())
             into["items"].append(it)
     for r in merged.values():

@@ -71,6 +71,25 @@ or config; SKILL.md rules 22–24 and "Corpus requests" say how to use them.
   "neu-\nrons" → "neurons" (real hyphens kept) for grouping, entity names, keys and
   mention labels; `surfaceForm` stays byte-exact. Legacy kg_plan keys with wrap
   fragments are rejoined.
+- **Mapping quality, from a 3-paper audit** (45% of BioPortal candidates were wrong:
+  mouse → Mouse mammary tumor virus, DS → Dravet syndrome, embryonic stages → somite):
+  BioPortal `require_exact_match` (`BIOPORTAL_EXACT=0` relaxes it); an abbreviation
+  is looked up by the expansion the paper defines ("Down syndrome (DS)" — Schwartz &
+  Hearst style, `mapping_query` records it); bare short tokens with no label route
+  are not sent to remote search; Software / Tool / Dataset / StatisticalMethod /
+  Algorithm get label routes (Python is not the snake).
+- **Causal vocabulary.** Extractor and kg_plan words ("increases", "hypothesized",
+  "review") map onto the ontology's terms via `ttl_config.json causal_value_aliases`
+  before schema validation and in the converter; an unknown value is dropped with a
+  comment instead of invalidating the TTL. The extractor prompts list the exact terms.
+- **Keys.** Non-ASCII punctuation separates words ("excitation–inhibition" →
+  `excitation_inhibition`), in keys and in the trusted lexicon (format 5, re-index).
+- **Line wraps.** The rejoin decision uses the paper's own vocabulary ("fast-\nspiking"
+  stays fast-spiking, "neu-\nrons" becomes neurons).
+- **References sections.** Only citation lines are skipped; Methods text a PDF lays
+  out among the references is kept (as Body).
+- **Judging.** The post-judge kg_plan (relabel moves applied) is saved as
+  `kg_plan.final.json` and used by `retry --from-stage ttl`.
 
 ## 0.9.0 — Turtle is the deliverable; trusted ontologies first; a judge panel, not a score
 

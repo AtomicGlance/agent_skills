@@ -149,12 +149,19 @@ def from_pdf(path: Path) -> dict:
     return out
 
 
+# DOI registrants of data repositories: a paper cites its dataset's DOI, which is not
+# the paper's own (Dataverse, Zenodo, figshare, Dryad, Mendeley Data, OSF, PANGAEA)
+DATA_DOI = re.compile(r"^10\.(34894|5281|6084|5061|17632|17605|1594|7910|25378|18112|7488|48550)/", re.I)
+
+
 def from_text(text: str) -> dict:
     head = text[:8000]
     out: dict[str, Any] = {}
-    m = DOI_RE.search(head) or DOI_RE.search(text)
-    if m:
-        out["doi"] = m.group(1).rstrip(".")
+    for m in list(DOI_RE.finditer(head)) + list(DOI_RE.finditer(text[8000:])):
+        doi = m.group(1).rstrip(".")
+        if not DATA_DOI.match(doi):
+            out["doi"] = doi
+            break
     m = PMID_RE.search(head)
     if m:
         out["pmid"] = m.group(1)

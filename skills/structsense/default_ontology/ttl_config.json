@@ -243,5 +243,79 @@
     }
   ],
   "source_path": "name",
-  "_source_path": "ner:sourcePath records the document's file NAME ('name', default) \u2014 never the user's local directory \u2014 or the full path ('full')."
+  "_source_path": "ner:sourcePath records the document's file NAME ('name', default) \u2014 never the user's local directory \u2014 or the full path ('full').",
+  "causal_value_aliases": {
+    "_comment": "Words extractors use for the causal vocabularies -> the ontology's own terms (ner:causal-type/*, causal-modality/*, ...). A value that is neither declared nor aliased is dropped from the TTL with an rdfs:comment naming it, never written as an undeclared IRI.",
+    "type": {
+      "increases": "positively_regulates",
+      "increase": "positively_regulates",
+      "enhances": "positively_regulates",
+      "upregulates": "positively_regulates",
+      "up_regulates": "positively_regulates",
+      "drives": "promotes",
+      "facilitates": "promotes",
+      "decreases": "negatively_regulates",
+      "decrease": "negatively_regulates",
+      "reduces": "negatively_regulates",
+      "impairs": "negatively_regulates",
+      "downregulates": "negatively_regulates",
+      "down_regulates": "negatively_regulates",
+      "disrupts": "negatively_regulates",
+      "blocks": "inhibits",
+      "alters": "contributes_to",
+      "affects": "contributes_to",
+      "modulates": "contributes_to",
+      "regulates": "contributes_to",
+      "influences": "contributes_to",
+      "associated_with": "contributes_to",
+      "produces": "results_in",
+      "generates": "results_in",
+      "requires": "necessary_for",
+      "worsens": "exacerbates",
+      "rescues": "alleviates",
+      "ameliorates": "alleviates",
+      "protects": "protects_against",
+      "recruits": "contributes_to",
+      "binds": "contributes_to",
+      "controls": "contributes_to",
+      "shapes": "contributes_to",
+      "determines": "causes",
+      "underlies": "contributes_to"
+    },
+    "modality": {
+      "hypothesized": "hypothetical",
+      "hypothesised": "hypothetical",
+      "proposed": "hypothetical",
+      "speculative": "possible",
+      "suggested": "possible",
+      "putative": "possible",
+      "likely": "probable",
+      "reported": "asserted",
+      "established": "asserted",
+      "demonstrated": "asserted",
+      "shown": "asserted",
+      "observed": "asserted"
+    },
+    "polarity": {
+      "increase": "positive",
+      "decrease": "negative",
+      "mixed": "unspecified",
+      "none": "neutral"
+    },
+    "directness": {
+      "indirectly": "indirect",
+      "directly": "direct",
+      "unknown": "unspecified"
+    },
+    "evidence_basis": {
+      "genetic_model": "genetic_perturbation",
+      "knockout": "genetic_perturbation",
+      "drug": "pharmacological_perturbation",
+      "observational": "observational_unadjusted",
+      "correlational": "observational_unadjusted",
+      "review": "author_assertion",
+      "literature": "author_assertion",
+      "cited": "author_assertion"
+    }
+  }
 }

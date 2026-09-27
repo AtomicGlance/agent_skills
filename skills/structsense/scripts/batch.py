@@ -444,7 +444,8 @@ def mask_chunk(text: str, chunk: dict, items: list[dict]) -> tuple[str, list[dic
 def kg_plan_input(result: dict, max_items: int = 400) -> dict:
     from group_by_entity import mention_groups
     items = []
-    for g in mention_groups(result)[:max_items]:
+    groups = sorted(mention_groups(result), key=lambda g: -len(g["items"]))  # the most-used entities first
+    for g in groups[:max_items]:
         it = g["items"][0]
         items.append({"id": g["id"], "label": g["label"], "mentions": len(g["items"]),
                       "ontology_id": it.get("ontology_id") if it.get("concept_mapping_provenance") == "tool" else None,
@@ -672,6 +673,9 @@ def advance(job: Job) -> Optional[dict]:
 
     # 6. Turtle + gate: this paper is delivered now, not at the end of the batch
     plan = drop_generic_keys(job, plan)
+    # the plan AFTER judging (relabels moved its entries, kg-keys fixes applied):
+    # what a later `retry --from-stage ttl` must render from, not the pre-judge draft
+    write_json(job.f("kg_plan.final.json"), plan or {})
     res = finish(job, result, plan)
     job.set(**res)
     if res["status"] == "done" and not job.settings.get("keep_json"):
@@ -842,7 +846,8 @@ def rerender(job: Job) -> dict:
         meta["ingestion"] = ing
     result["source_metadata"] = meta
     from judge_ensemble import sanitize_kg_plan
-    plan = sanitize_kg_plan(read_json(job.f("kg_plan.json")) or {})
+    final = job.f("kg_plan.final.json")
+    plan = sanitize_kg_plan(read_json(final if final.is_file() else job.f("kg_plan.json")) or {})
     return finish(job, result, drop_generic_keys(job, plan))
 
 

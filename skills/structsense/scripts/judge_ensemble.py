@@ -16,6 +16,7 @@ grouped items and their sentences.
 from __future__ import annotations
 
 import json
+import re
 import logging
 import sys
 from pathlib import Path
@@ -101,6 +102,26 @@ def make_kg_plan(result: dict, *, call: Callable[..., str], model: str, max_item
     return sanitize_kg_plan(plan)
 
 
+def normalize_causal_values(cr: dict) -> dict:
+    """Map extractor/planner words ('increases', 'hypothesized') onto the schema's
+    vocabulary via ttl_config causal_value_aliases BEFORE validation, so a synonym
+    costs nothing instead of dropping the whole claim."""
+    cfg = json.loads((SKILL_DIR / "default_ontology" / "ttl_config.json").read_text())
+    aliases = cfg.get("causal_value_aliases") or {}
+    cr = dict(cr)
+    for field in ("type", "modality", "polarity", "directness", "evidence_basis"):
+        v = cr.get(field)
+        if v is None:
+            continue
+        table = aliases.get(field) or {}
+        norm = lambda x: table.get(re.sub(r"[^a-z0-9]+", "_", str(x).lower()).strip("_"),  # noqa: E731
+                                   re.sub(r"[^a-z0-9]+", "_", str(x).lower()).strip("_"))
+        cr[field] = [norm(x) for x in v] if isinstance(v, list) else norm(v)
+    if isinstance(cr.get("evidence_basis"), str):
+        cr["evidence_basis"] = [cr["evidence_basis"]]
+    return cr
+
+
 def sanitize_kg_plan(plan) -> dict:
     """Keep only the parts of a model-written plan that match schemas/kg-plan.schema.json.
     A malformed plan must degrade to a flatter TTL, never crash the run."""
@@ -117,6 +138,10 @@ def sanitize_kg_plan(plan) -> dict:
         vals = plan.get(field)
         if isinstance(vals, list):
             out[field] = [v for v in vals if isinstance(v, dict)]
+    out["causal_relations"] = [normalize_causal_values(cr) for cr in out.get("causal_relations") or []] \
+        if out.get("causal_relations") else out.get("causal_relations", [])
+    if not out["causal_relations"]:
+        out.pop("causal_relations")
     try:
         import jsonschema
         schema = json.loads((SKILL_DIR / "schemas" / "kg-plan.schema.json").read_text())

@@ -57,6 +57,10 @@ URL = re.compile(r"(?:https?://|www\.)\S+|\b[\w.-]+\.(?:org|com|edu|gov|io|net|d
                  r"|\S+\.(?:pdf|nii|gz|csv|zip|tsv|h5|h5ad)\b", re.I)
 WS = "[\\s ­]+"
 HY = "(?:-[\\s­]*|[‐‑–]|­\\s*)"
+# a bibliography entry: "12. Smith, J. ...", "Smith JA, ... (2019)", "... 2019; 12:345-9", a DOI
+_CITATION = re.compile(r"^\s*(\[?\d{1,3}[.\])]\s+\S|[A-Z][A-Za-z'\-]+,?\s+(?:[A-Z]\.?\s?){1,3}[,.])"
+                       r"|\((?:19|20)\d{2}[a-z]?\)|\b(?:19|20)\d{2}[a-z]?[;,.]\s*\d+|doi\.org/|\bdoi:|et al\.",
+                       re.I)
 _SENT = re.compile(r"(?<=[.!?])[\"')\]]*\s+(?=[\"'(\[]?[A-Z0-9])|\n[ \t]*\n")
 
 
@@ -125,6 +129,25 @@ class Text:
                 break
         return name
 
+    def location(self, a: int) -> str:
+        """Section for provenance: text laid out inside a reference list that is not
+        itself a citation is body text, not "References"."""
+        sec = self.section(a)
+        if sec.lower() in ("references", "bibliography", "literature cited") and not self.is_citation(a):
+            return "Body"
+        return sec
+
+    def line_at(self, a: int) -> str:
+        lo = self.text.rfind("\n", 0, a) + 1
+        hi = self.text.find("\n", a)
+        return self.text[lo:hi if hi >= 0 else len(self.text)]
+
+    def is_citation(self, a: int) -> bool:
+        """Is the line at `a` a bibliography entry? PDFs interleave Methods text with
+        the reference list, so a References heading does not make the rest of the
+        document a bibliography."""
+        return bool(_CITATION.search(self.line_at(a)))
+
     def in_url(self, a: int, b: int) -> bool:
         return any(u0 <= a and b <= u1 for u0, u1 in self.urls)
 
@@ -156,7 +179,14 @@ def expand(lexicon: dict, text: str, *, model: str = "unknown", keep_nested: boo
     skip_secs = OUT_OF_SCOPE - allow
 
     def excluded(a: int, b: int) -> bool:
-        return T.in_url(a, b) or T.section(a).lower() in skip_secs
+        if T.in_url(a, b):
+            return True
+        sec = T.section(a).lower()
+        if sec not in skip_secs:
+            return False
+        if sec in ("references", "bibliography", "literature cited"):
+            return T.is_citation(a)  # only the entries themselves, not text laid out among them
+        return True
 
     # one entry per (surface, label): the first one's extra fields win
     seen_entries: dict[tuple[str, str], dict] = {}
@@ -169,7 +199,11 @@ def expand(lexicon: dict, text: str, *, model: str = "unknown", keep_nested: boo
         if not surf:
             continue
         flags = re.I if e.get("ignore_case") else 0
-        tail = r"(?![A-Za-z_])" if (len(surf) >= 4 and surf[-1].isalpha()) else r"(?![\w])"
+        # a citation number glued to a word still ends it ("microglia90", "DS8,9"), but a
+        # single digit continues a name ("SNARE-seq2", "sciATAC-seq3"); a hyphen into a
+        # capital or digit continues a compound ("TF-IDF", "sci-ATAC")
+        glued = r"(?!\d(?!\d|[,\u2013-]\d))" if surf[-1].isalpha() else r"(?!\d)"
+        tail = r"(?![A-Za-z_])" + glued + r"(?!-[A-Z0-9])"
         head = r"(?<![\w-])" if surf[0].isalnum() else ""
         pat = re.compile(head + flex(surf) + tail, flags)
         ctx = [re.compile(flex(c), flags) for c in e.get("only_in") or []]
@@ -184,8 +218,12 @@ def expand(lexicon: dict, text: str, *, model: str = "unknown", keep_nested: boo
     hits.sort(key=lambda h: (h[0], -(h[1] - h[0])))
     kept = []
     for h in hits:
-        if not keep_nested and any(k[0] <= h[0] and h[1] <= k[1] and (k[1] - k[0]) > (h[1] - h[0])
-                                   and k[2]["label"] == h[2]["label"] for k in kept):
+        inside = [k for k in kept if k[0] <= h[0] and h[1] <= k[1] and (k[1] - k[0]) > (h[1] - h[0])]
+        # flat NER (the default): the longest span wins, whatever its label — "DNA" inside
+        # "DNA methylation" is not a separate mention. keep_nested (cns-cells) keeps
+        # nested spans of OTHER labels (a marker inside a cell-type span) but still drops
+        # a same-label repeat.
+        if inside and (not keep_nested or any(k[2]["label"] == h[2]["label"] for k in inside)):
             continue
         kept.append(h)
 
@@ -196,7 +234,7 @@ def expand(lexicon: dict, text: str, *, model: str = "unknown", keep_nested: boo
             continue
         it = {k: v for k, v in e.items() if k not in ("ignore_case", "only_in", "start", "end")}
         it.update({"entity": text[a:b], "label": e["label"], "start": a, "end": b,
-                   "sentence": T.sentence(a, b), "paper_location": T.section(a)})
+                   "sentence": T.sentence(a, b), "paper_location": T.location(a)})
         it.setdefault("source_model", src)
         items.append(it)
         seen.add((a, b, e["label"]))
@@ -210,7 +248,7 @@ def expand(lexicon: dict, text: str, *, model: str = "unknown", keep_nested: boo
             continue
         it = dict(it)
         it.setdefault("sentence", T.sentence(a, b))
-        it["paper_location"] = T.section(a)
+        it["paper_location"] = T.location(a)
         it.setdefault("source_model", src)
         items.append(it)
         seen.add((a, b, it["label"]))

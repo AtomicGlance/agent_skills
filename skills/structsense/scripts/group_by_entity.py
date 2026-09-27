@@ -42,17 +42,58 @@ from statistics import mean
 from typing import Any, Iterable, Optional
 
 
-_WRAP_JOIN = re.compile(r"([a-z])[-\u00ad][ \t]*\n[ \t]*([a-z])")
+_WRAP = re.compile(r"([A-Za-z]+)[-\u00ad][ \t]*\n[ \t]*([A-Za-z]+)")
 _WRAP_KEEP = re.compile(r"(\w)-[ \t]*\n[ \t]*(\w)")
+_WORD = re.compile(r"[a-z]+(?:-[a-z]+)*")
 
 
-def reading_form(surface: str) -> str:
+def document_vocab(texts) -> set[str]:
+    """Lowercase words and hyphenated compounds as the document writes them where it
+    does NOT wrap: the evidence reading_form uses to undo a line-wrap hyphen."""
+    vocab: set[str] = set()
+    for t in texts:
+        if t:
+            vocab.update(_WORD.findall(re.sub(r"[-\u00ad][ \t]*\n", "\u0000", str(t).lower())))
+    return vocab
+
+
+_VOCAB_CTX: set = set()
+
+
+def use_vocab(vocab: set) -> None:
+    """Set the document vocabulary reading_form consults when none is passed."""
+    global _VOCAB_CTX
+    _VOCAB_CTX = set(vocab or ())
+
+
+def vocab_of_items(items: Iterable[dict]) -> set:
+    return document_vocab(t for it in items if isinstance(it, dict)
+                          for t in (it.get("sentence"), it.get("entity"), it.get("term")))
+
+
+def reading_form(surface: str, vocab: Optional[set] = None) -> str:
     """The surface as a reader sees it, for names, grouping and keys — never for
-    offsets (surfaceForm stays byte-exact). PDF line wraps are undone: a word split
-    between lowercase letters is rejoined ("neu-\nrons" -> "neurons"), a real hyphen is
-    kept ("NP-\nGPCR" -> "NP-GPCR"), soft hyphens go, whitespace collapses."""
+    offsets (surfaceForm stays byte-exact). A hyphen at a PDF line break is either a
+    split word ("neu-\nrons") or a compound broken at its hyphen ("fast-\nspiking").
+    The document decides: the joined word elsewhere in it -> join; the hyphenated
+    compound elsewhere -> keep the hyphen; no evidence -> join a fragment ("neu"),
+    keep the hyphen between two full words (both >= 4 letters). Soft hyphens go,
+    whitespace collapses."""
     s = (surface or "").replace("\u00ad", "")
-    s = _WRAP_JOIN.sub(r"\1\2", s)
+    vocab = vocab if vocab is not None else _VOCAB_CTX
+
+    def fix(m):
+        a, b = m.group(1), m.group(2)
+        joined, hyph = (a + b).lower(), f"{a}-{b}".lower()
+        if vocab:
+            if joined in vocab and hyph not in vocab:
+                return a + b
+            if hyph in vocab:
+                return f"{a}-{b}"
+        if len(a) >= 4 and len(b) >= 4 or not b[:1].islower():
+            return f"{a}-{b}"
+        return a + b
+    s = _WRAP.sub(fix, s)
     s = _WRAP_KEEP.sub(r"\1-\2", s)
     return " ".join(s.split())
 
@@ -113,6 +154,8 @@ def group_mentions_by_entity(
 
     Returns a list of grouped dicts (see module docstring for shape).
     """
+    items = list(items)
+    use_vocab(vocab_of_items(items))
     buckets: dict[tuple[str, str], list[dict]] = defaultdict(list)
     for it in items:
         if not it.get(surface_key):
@@ -239,6 +282,8 @@ def unify_ontology_across_entities(entities: list[dict],
 
     Mutates the list in place and returns it.
     """
+    entities = list(entities) if not isinstance(entities, list) else entities
+    use_vocab(vocab_of_items(entities))
     best: dict[tuple, dict] = {}
 
     for ent in entities:
@@ -285,6 +330,7 @@ def mention_groups(result: dict) -> list[dict]:
     Falls back to the grouped view's mentions when a result carries no raw list.
     Ordered by first occurrence in the document, so ids and IRIs are stable.
     """
+    use_vocab(vocab_of_items((result.get("entities") or []) + (result.get("key_terms") or [])))
     buckets: dict[tuple[str, str, str], list[dict]] = defaultdict(list)
     for kind, raw_key, grp_key, surf in (("entity", "entities", "entities_grouped", "entity"),
                                           ("key_term", "key_terms", "key_terms_grouped", "term")):
