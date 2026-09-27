@@ -160,7 +160,9 @@ def cmd_init(args) -> int:
         m["settings"] = {**(m.get("settings") or {}),
                          "chunk_chars": args.chunk_chars, "recall": not args.no_recall,
                          "judges": not args.no_judges, "keep_json": args.keep_json,
-                         "mapper_url": args.mapper_url, "loader": {"docling": not args.no_docling,
+                         "mapper_url": args.mapper_url,
+                         "mapping_sources": [x.strip() for x in (args.mapping_sources or "").split(",") if x.strip()] or None,
+                         "loader": {"docling": not args.no_docling,
                                                                    "grobid": not args.no_grobid},
                          "text_dir": str(manifest.parent / "text")}
         known = {p["stem"] for p in m["papers"]}
@@ -381,7 +383,8 @@ def build_result(job: Job, text: str, chunks: list[dict]) -> dict:
 def map_and_normalize(job: Job, result: dict, text: str, n_chunks: int) -> dict:
     from concept_mapping import ConceptMapper, map_result
     from normalize_result import normalize
-    cm = ConceptMapper(local_url=job.settings.get("mapper_url") or None, ask_user=None)
+    cm = ConceptMapper(sources=job.settings.get("mapping_sources") or None,
+                       local_url=job.settings.get("mapper_url") or None, ask_user=None)
     if not cm.usable_sources():
         raise RuntimeError("concept mapping is mandatory and tool-only (rule 15) and no source in "
                            "concept_mapping.json is usable: run `python -m scripts.concept_mapping index` "
@@ -821,6 +824,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     a.add_argument("--no-judges", action="store_true", help="skip the judge ensemble (not recommended)")
     a.add_argument("--keep-json", action="store_true", help="keep chunk/judge work files after a paper is done")
     a.add_argument("--mapper-url", default=None, help="local hybrid mapper (default from concept_mapping.json)")
+    a.add_argument("--mapping-sources", default=None,
+                   help="override concept_mapping.json sources_priority, e.g. 'trusted,bioportal' "
+                        "(BioPortal needs BIOPORTAL_API_KEY in the environment)")
     a.add_argument("--no-docling", action="store_true")
     a.add_argument("--no-grobid", action="store_true")
     a.set_defaults(fn=cmd_init)
