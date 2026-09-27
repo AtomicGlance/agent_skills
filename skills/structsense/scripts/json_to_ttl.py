@@ -124,6 +124,7 @@ class TtlConfig:
         self.secondary_classes = sec
         self.media_types = _clean(raw.get("media_types"))
         self.label_max_length = int((raw.get("labels") or {}).get("max_length") or 0)
+        self.source_path_mode = raw.get("source_path", "name")
         iri = raw.get("iri") or {}
         self.iri_scheme = iri.get("scheme", "uuid5")
         self.iri_base = iri.get("base", "https://brainkb.org/kb/")
@@ -495,6 +496,7 @@ class TurtleBuilder:
         self.warnings: list[str] = []
         self.counts: dict[str, int] = defaultdict(int)
         self.entities_by_key: dict[str, dict] = {}
+        self.classifications: dict[str, URIRef] = {}  # reading -> shared EntityClassification
         self.coordinated: list[dict] = []  # coordinated spans, resolved into components after all entities
         self.entity_by_group_id: dict[str, dict] = {}
         self.agents: dict[str, URIRef] = {}
@@ -536,6 +538,8 @@ class TurtleBuilder:
         if cap and len(text) > cap:
             self.add(node, RDFS.comment, Literal(text))
             cut = text[:cap - 1].rsplit(" ", 1)[0] if " " in text[:cap - 1] else text[:cap - 1]
+            if len(cut) < cap // 2:  # a long unbroken token: cut inside it, not before it
+                cut = text[:cap - 1]
             text = cut.rstrip(" ,;:") + "…"
         self.add(node, RDFS.label, Literal(text))
 
@@ -589,22 +593,16 @@ class TurtleBuilder:
         if re.fullmatch(r"\d{4}-\d{2}-\d{2}", pdate):
             self.add(self.pub, NER.publicationDate, Literal(pdate, datatype=XSD.date))
         year = self.meta.get("year") or (pdate[:4] if re.match(r"^\d{4}", pdate) else None)
-        if year:
+        if year and re.match(r"^\d{4}", str(year)):
             self.add(self.pub, DCTERMS.issued, Literal(str(year)[:4], datatype=XSD.gYear))
-        self.add(self.pub, NER.hasDocumentVersion, self.docv)
-
-        self.add(self.docv, RDF.type, NER.DocumentVersion)
-        self.add(self.docv, NER.versionOfDocument, self.pub)
-        self.label(self.docv, "document version")
-        sp = self.meta.get("source_path")
-        media = self.media_type or (self.cfg.media_types.get(Path(str(sp)).suffix.lower()) if sp else None)
-        if media:
-            self.add(self.docv, NER.mediaType, self.lit(media, XSD.string))
-        if self.checksum:
-            self.add(self.docv, NER.checksum, self.lit(self.checksum, XSD.string))
-        if self.meta.get("source_path"):
-            self.add(self.docv, NER.sourcePath, self.lit(str(self.meta["source_path"]), XSD.string))
-
+        if self.meta.get("journal"):
+            self.add(self.pub, DCTERMS.bibliographicCitation, Literal(str(self.meta["journal"])))
+        self.emit_authors()
+        srcs = self.meta.get("metadata_sources") or {}
+        if srcs:
+            self.add(self.pub, RDFS.comment, Literal("metadata read from: " + "; ".join(
+                f"{k} <- {v}" for k, v in sorted(srcs.items()) if k != "paper_title")))
+        self.emit_document_versions()
         task = self.result.get("task_type") or ("resource" if _resource_items(self.result) else "ner")
         self.add(self.run, RDF.type, NER.NERExtractionActivity)
         self.label(self.run, f"structsense {task} extraction run")
@@ -689,6 +687,87 @@ class TurtleBuilder:
             self.add(node, NER.agentVersion, self.lit(str(version), XSD.string))
         self.agents[key] = node
         return node
+
+    def emit_authors(self):
+        """Who wrote the paper, as PROV: the publication prov:wasAttributedTo (and
+        dcterms:creator) each author, a prov:Person shared across papers (keyed by ORCID
+        when known, else by name). Author order is the publication's own statement."""
+        authors = []
+        for a in self.meta.get("authors") or []:
+            a = {"name": a} if isinstance(a, str) else a
+            if isinstance(a, dict) and (a.get("name") or "").strip():
+                authors.append(a)
+        for a in authors:
+            name = " ".join(str(a["name"]).split())
+            orcid = re.sub(r"^https?://orcid\.org/", "", str(a.get("orcid") or "")).strip()
+            key = f"orcid:{orcid}" if orcid else "person:" + re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+            node = self.mint_global("agent", key=key)
+            self.add(node, RDF.type, PROV.Person)
+            self.label(node, name)
+            if orcid:
+                self.add(node, DCTERMS.identifier, Literal(f"https://orcid.org/{orcid}"))
+            self.add(self.pub, PROV.wasAttributedTo, node)
+            self.add(self.pub, DCTERMS.creator, node)
+        if authors:
+            names = "; ".join(" ".join(str(a["name"]).split()) for a in authors)
+            partial = " (partial: first author only, from PDF metadata)" if self.meta.get("authors_partial") else ""
+            self.add(self.pub, RDFS.comment, Literal(f"authors, in order{partial}: {names}"))
+
+    def emit_document_versions(self):
+        """The document as received (PDF / XML / DOCX ...) and, when the text was
+        extracted from it, the text actually processed: a second DocumentVersion,
+        prov:wasDerivedFrom the first and generated by a ner:DocumentIngestionActivity
+        naming the backend. Mentions, sentences and offsets belong to the text."""
+        sp = self.meta.get("source_path")
+        tp = self.meta.get("text_path")
+        ing = self.meta.get("ingestion") or {}
+        src_is_text = not sp or (tp and Path(str(sp)).resolve() == Path(str(tp)).resolve()) or \
+            (not tp and Path(str(sp)).suffix.lower() in (".txt", ".md"))
+        media = lambda p: self.cfg.media_types.get(Path(str(p)).suffix.lower()) if p else None  # noqa: E731
+
+        def version(node, path, checksum, mtype):
+            self.add(node, RDF.type, NER.DocumentVersion)
+            self.add(node, NER.versionOfDocument, self.pub)
+            self.add(self.pub, NER.hasDocumentVersion, node)
+            if mtype:
+                self.add(node, NER.mediaType, self.lit(mtype, XSD.string))
+            if checksum:
+                self.add(node, NER.checksum, self.lit(checksum, XSD.string))
+            if path:  # the file NAME only by default: a local path is private and not portable
+                shown = str(path) if self.cfg.source_path_mode == "full" else Path(str(path)).name
+                self.add(node, NER.sourcePath, self.lit(shown, XSD.string))
+
+        if src_is_text:
+            version(self.docv, sp or tp, self.checksum or ing.get("text_sha256"), self.media_type or media(sp or tp))
+            self.label(self.docv, "document version")
+            return
+        orig = self.mint("document_version", "source")
+        version(orig, sp, ing.get("source_sha256") or _sha256_if_file(sp), media(sp))
+        self.label(orig, "source document")
+        if ing.get("page_count"):
+            self.add(orig, RDFS.comment, Literal(f"{ing['page_count']} pages"))
+        version(self.docv, tp, ing.get("text_sha256") or self.checksum, media(tp) or "text/plain")
+        self.label(self.docv, "extracted text")
+        self.add(self.docv, PROV.wasDerivedFrom, orig)
+        act = self.mint("document_ingestion", "1")
+        self.add(act, RDF.type, NER.DocumentIngestionActivity)
+        self.label(act, "text extraction")
+        self.add(act, PROV.used, orig)
+        self.add(self.docv, PROV.wasGeneratedBy, act)
+        t = as_datetime(ing.get("at"))
+        if t is not None:
+            self.add(act, PROV.endedAtTime, t)
+        backend = ing.get("backend")
+        if backend:
+            self.add(act, PROV.wasAssociatedWith, self.agent(
+                f"text-extractor:{backend}", NER.NamedEntitySoftwareAgent, backend,
+                version=ing.get("backend_version") or backend))
+        parts = [f"backend {backend}" if backend else None,
+                 f"{ing['chars']} characters" if ing.get("chars") else None,
+                 f"docling {'on' if ing.get('docling') else 'off'}" if "docling" in ing else None,
+                 f"grobid {'on' if ing.get('grobid') else 'off'}" if "grobid" in ing else None]
+        if any(parts):
+            self.add(act, RDFS.comment, Literal("; ".join(p for p in parts if p)))
 
     def source_agent(self, source_model: Optional[str]) -> URIRef:
         sm = source_model or "llm_ner:unknown"
@@ -867,26 +946,37 @@ class TurtleBuilder:
         self.add(m, NER.hasAnnotationVersion, av)
         self.add(m, NER.hasCurrentAnnotationVersion, av)
         ent.setdefault("avs", {}).setdefault(grp["id"], []).append(av)
-        cl = self.mint("classification", f"{ent['key']}|{n}|1")
-        self.add(cl, RDF.type, NER.EntityClassification)
-        self.label(cl, f"classification {grp['label'] or 'KeyTerm'}")
-        self.add(cl, NER.classifiedAsClass, NER[sorted(ent["classes"])[0]])
-        self.add(cl, NER.classificationLabelRaw, self.lit(grp["label"] or "KeyTerm", XSD.string))
+        # One classification node per distinct READING of the entity (class, raw label,
+        # confidence, specificity), shared by every mention read that way — not one node
+        # per mention repeating the entity's own rdf:type hundreds of times.
+        cls = sorted(ent["classes"])[0]
+        raw = grp["label"] or "KeyTerm"
         # the judged confidence of this reading when the ensemble ran, else the
         # surfacing model's own score (HF NER models emit one)
         score = it.get("judge_score") if it.get("judge_method") == "ensemble" else it.get("source_score")
-        if isinstance(score, (int, float)) and 0 <= score <= 1:
-            self.add(cl, NER.classificationConfidence, self.dec(round(float(score), 4)))
+        score = round(float(score), 4) if isinstance(score, (int, float)) and 0 <= score <= 1 else None
+        spec = it.get("specificity")
+        spec = spec if spec in ("cell_phenotype", "cell_vague", "cell_hetero", "unspecified") else None
+        reading = f"{ent['key']}|{cls}|{raw}|{score}|{spec}"
+        cl = self.classifications.get(reading)
+        if cl is None:
+            cl = self.mint("classification", reading)
+            self.classifications[reading] = cl
+            self.add(cl, RDF.type, NER.EntityClassification)
+            self.label(cl, raw + (f" ({spec})" if spec else ""))  # rdf:type already says "classification"
+            self.add(cl, NER.classifiedAsClass, NER[cls])
+            self.add(cl, NER.classificationLabelRaw, self.lit(raw, XSD.string))
+            if score is not None:
+                self.add(cl, NER.classificationConfidence, self.dec(score))
+            if spec:
+                self.add(cl, NER.hasSpecificityCategory, NER[f"specificity/{spec}"])
+                self.add(cl, NER.specificityLabelRaw, self.lit(spec, XSD.string))
         if it.get("concept_mapping_provenance") == "tool" and it.get("ontology_id"):
             for single, _hint in split_ontology_ids(str(it["ontology_id"])):
                 pair = ent.get("decisions", {}).get(single)
                 if pair:
                     self.add(av, NER.hasMappingDecision, pair[0])
                     self.add(av, NER.hasMappingCandidate, pair[1])
-        spec = it.get("specificity")
-        if spec in ("cell_phenotype", "cell_vague", "cell_hetero", "unspecified"):
-            self.add(cl, NER.hasSpecificityCategory, NER[f"specificity/{spec}"])
-            self.add(cl, NER.specificityLabelRaw, self.lit(spec, XSD.string))
         self.add(av, NER.hasClassification, cl)
 
     def emit_components(self):
@@ -1112,7 +1202,7 @@ class TurtleBuilder:
         self.add(cand, NER.candidateConcept, concept)
         self.add(cand, NER.candidateForNormalizedEntity, ent["node"])
         self.add(cand, NER.mappingRank, self.lit(1, XSD.positiveInteger))  # the selected (top) candidate
-        self.label(cand, f"candidate {ref[1]}")
+        self.label(cand, ref[1])
         score = it.get("mapping_score") or it.get("score")
         if isinstance(score, (int, float)):
             sc = self.mint("mapping_score", base)
@@ -1146,7 +1236,7 @@ class TurtleBuilder:
             conf = it["score"]
         if isinstance(conf, (int, float)):
             self.add(dec, NER.decisionConfidence, self.dec(round(float(conf), 4)))
-        self.label(dec, f"mapping decision {ref[1]}")
+        self.label(dec, ref[1])
 
     # ---- reviews ------------------------------------------------------------
     def judge_agent(self, judge: str) -> URIRef:
@@ -1314,7 +1404,7 @@ class TurtleBuilder:
             self.add(r, NER.reviewComment, self.lit(str(rv["reason"])))
         self.add(r, PROV.wasAttributedTo, self.judge_agent(judge))
         self.add(r, PROV.wasGeneratedBy, self.judge_activity(judge))
-        self.label(r, f"{judge} review")
+        self.label(r, judge)
         self.counts["review_decisions"] += 1
         return r
 
@@ -1752,6 +1842,13 @@ def as_datetime(value) -> Optional[Literal]:
 
 def utc_now() -> str:
     return dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _sha256_if_file(path) -> Optional[str]:
+    try:
+        return sha256_of(Path(str(path))) if path and Path(str(path)).is_file() else None
+    except OSError:
+        return None
 
 
 def sha256_of(path: Path) -> str:

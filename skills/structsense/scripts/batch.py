@@ -296,7 +296,30 @@ def ensure_text(job: Job) -> str:
     if not text.strip():
         raise RuntimeError(f"{src}: no text could be extracted")
     tp.write_text(text, encoding="utf-8")
+    write_json(tp.with_suffix(".ingest.json"), ingestion_record(src, tp, text, job.settings.get("loader") or {}))
     return text
+
+
+def ingestion_record(src: Path, tp: Path, text: str, loader: dict) -> dict:
+    """How the processed text came to be: provenance for the TTL (source document ->
+    DocumentIngestionActivity -> extracted text)."""
+    import hashlib
+    import input_loader
+    backend = {".txt": "plain", ".md": "plain", ".xml": "jats"}.get(src.suffix.lower()) or input_loader.LAST_BACKEND
+    version = None
+    pkg = {"pymupdf4llm": "pymupdf4llm", "pymupdf": "pymupdf", "pdfminer": "pdfminer.six", "docling": "docling"}.get(backend or "")
+    if pkg:
+        with contextlib.suppress(Exception):
+            from importlib.metadata import version as _v
+            version = f"{backend} {_v(pkg)}"
+    sha = lambda b: hashlib.sha256(b).hexdigest()  # noqa: E731
+    rec = {"backend": backend, "backend_version": version, "chars": len(text), "at": utc_now(),
+           "source_sha256": sha(src.read_bytes()), "text_sha256": sha(tp.read_bytes()),
+           "docling": loader.get("docling", True), "grobid": loader.get("grobid", True)}
+    if src.suffix.lower() == ".pdf":
+        from doc_metadata import from_pdf
+        rec["page_count"] = from_pdf(src).get("page_count")
+    return rec
 
 
 def chunks_for(job: Job, text: str) -> list[dict]:
@@ -373,7 +396,13 @@ def build_result(job: Job, text: str, chunks: list[dict]) -> dict:
     lex = {"entries": entries, "items": [e for e in entries if isinstance(e.get("start"), int)]}
     items, rep = expand(lex, text, model=job.model, keep_nested=job.domain == "cns-cells")
     kts = [k for k in kts if isinstance(k.get("start"), int)]
+    from doc_metadata import harvest, merge
+    meta = merge(meta, harvest(job.input, text))
     meta["source_path"] = str(job.input)
+    meta["text_path"] = str(job.text_path)
+    ing = read_json(job.text_path.with_suffix(".ingest.json"))
+    if isinstance(ing, dict):
+        meta["ingestion"] = ing
     result = {"source_metadata": meta, "task_type": "ner", "ner_domain": job.domain,
               "entities": items, "key_terms": kts, "causal_relations": causal,
               "expansion": {k: (v[:50] if isinstance(v, list) else v) for k, v in rep.items()}}
@@ -522,7 +551,8 @@ def advance(job: Job) -> Optional[dict]:
                     "Follow the prompt's System block on this chunk. Write its JSON (entities; key_terms; "
                     "causal_relations) to `write`; offsets may be chunk-local. Name every distinct surface form "
                     "+ label you see AT LEAST ONCE — scripts/expand_mentions.py finds every other occurrence, so "
-                    "do not spend output on repeats. Chunk 1: also fill source_metadata (paper_title, doi, year). "
+                    "do not spend output on repeats. Chunk 1: also fill source_metadata (paper_title, doi, year, "
+                    "journal, authors as [{name, orcid?}] in printed order) — only what the text states. "
                     "Skip references, acknowledgements, funding/grant numbers and author lists.")}
 
     # 2. expansion + (optional) mask-recall, again per chunk
@@ -781,6 +811,29 @@ def cmd_status(args) -> int:
     return 0
 
 
+def rerender(job: Job) -> dict:
+    """Regenerate a finished paper's TTL from its kept final JSON + kg_plan, with the
+    document metadata re-read (doc_metadata) — no model call, no re-extraction."""
+    result = read_json(job.final_json)
+    if not isinstance(result, dict):
+        raise SystemExit(f"{job.key}: no {job.final_json.name} to re-render from; use --from-stage extract")
+    from doc_metadata import harvest, merge
+    text = job.text_path.read_text(encoding="utf-8") if job.text_path.is_file() else ""
+    meta = merge(result.get("source_metadata"), harvest(job.input, text))
+    meta.update({"source_path": str(job.input), "text_path": str(job.text_path)})
+    ing = read_json(job.text_path.with_suffix(".ingest.json"))
+    if not isinstance(ing, dict) and job.text_path.is_file():
+        ing = ingestion_record(job.input, job.text_path, text, job.settings.get("loader") or {})
+        ing["backend"] = ing.get("backend") or "unknown (text extracted before ingestion was recorded)"
+        write_json(job.text_path.with_suffix(".ingest.json"), ing)
+    if isinstance(ing, dict):
+        meta["ingestion"] = ing
+    result["source_metadata"] = meta
+    from judge_ensemble import sanitize_kg_plan
+    plan = sanitize_kg_plan(read_json(job.f("kg_plan.json")) or {})
+    return finish(job, result, drop_generic_keys(job, plan))
+
+
 def cmd_retry(args) -> int:
     manifest = Path(args.manifest).expanduser().resolve()
     m = load_manifest(manifest)
@@ -800,11 +853,16 @@ def cmd_retry(args) -> int:
             for n in ("kg_plan.json",):
                 with contextlib.suppress(FileNotFoundError):
                     job.f(n).unlink()
+        if args.from_stage == "ttl" and job.final_json.is_file():
+            res = rerender(job)
+            update_job(manifest, k, **res)
+            print(f"{res['status'].upper()} {k}: {res.get('ttl')}")
+            continue
         for p in (job.ttl, job.ttl.with_suffix(".invalid.ttl")):
             with contextlib.suppress(FileNotFoundError):
                 p.unlink()
         update_job(manifest, k, status="pending", error=None, violations=None, started_at=None)
-    print(f"reset {len(keys)} job(s) from {args.from_stage}")
+    print(f"{len(keys)} job(s) handled from stage {args.from_stage}")
     return 0
 
 

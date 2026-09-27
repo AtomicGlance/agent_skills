@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sqlite3
 from pathlib import Path
 from typing import Optional
@@ -55,6 +56,10 @@ class PrefixRegistry:
         for p, template in _clean(raw.get("curie_expansions")).items():
             if template.endswith("{id}"):
                 self._add(p, template[:-len("{id}")], "ttl_config:curie_expansions")
+        # namespace families: one rule registers every member on first use
+        # (BioPortal's http://purl.bioontology.org/ontology/<ACRONYM>/ -> ACRONYM)
+        self._patterns = [(re.compile(x["regex"]), int(x.get("prefix_group", 1)))
+                          for x in raw.get("namespace_patterns") or [] if isinstance(x, dict) and x.get("regex")]
         if use_lexicon and mapping_config and Path(mapping_config).is_file():
             self._load_lexicon(Path(mapping_config))
         self._namespaces.sort(key=lambda x: -len(x[0]))
@@ -112,6 +117,16 @@ class PrefixRegistry:
         for ns, prefix in self._namespaces:
             if iri.startswith(ns) and len(iri) > len(ns):
                 return f"{prefix}:{iri[len(ns):]}", prefix
+        for rx, grp in self._patterns:
+            m = rx.match(iri)
+            if not m or len(iri) <= m.end():
+                continue
+            prefix, ns = m.group(grp), m.group(0)
+            if self._by_prefix.get(prefix.lower()):
+                return None  # the prefix already names another namespace: never two for one
+            self._add(prefix, ns, "ttl_config:namespace_patterns")
+            self._namespaces.sort(key=lambda x: -len(x[0]))
+            return f"{prefix}:{iri[m.end():]}", prefix
         return None
 
     def expand(self, curie: str) -> Optional[str]:

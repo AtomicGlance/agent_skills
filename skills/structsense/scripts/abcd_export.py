@@ -37,7 +37,7 @@ NS = "https://structsense.skills/abcd/"   # the ABCD vocabulary (classes, proper
 def _iri_config() -> tuple[str, "uuid.UUID"]:
     """Instance IRIs follow the same scheme as the NER Turtle (default_ontology/
     ttl_config.json `iri`): <base><uuid5(uuid5(NAMESPACE_URL, seed), name)>."""
-    cfg_path = _Path(__file__).resolve().parent.parent / "default_ontology" / "ttl_config.json"
+    cfg_path = Path(__file__).resolve().parent.parent / "default_ontology" / "ttl_config.json"
     iri = {}
     try:
         iri = json.loads(cfg_path.read_text()).get("iri") or {}
@@ -360,7 +360,7 @@ def paper_turtle(doc: dict) -> str:
     if meta.get("doi"):
         out.append(f"    dcterms:identifier {lit(meta['doi'])} ;")
     if meta.get("source_path"):
-        out.append(f"    abcd:sourcePath {lit(meta['source_path'])} ;")
+        out.append(f"    abcd:sourcePath {lit(Path(str(meta['source_path'])).name)} ;")
     if meta.get("data_release"):
         out.append(f"    abcd:statedDataRelease {lit(meta['data_release'])} ;")
     out.append(f"    abcd:extractedBy {lit(prov.get('llm_model'))} ;")

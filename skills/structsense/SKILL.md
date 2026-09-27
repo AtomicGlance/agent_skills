@@ -236,10 +236,13 @@ These prevent the most common failures.
       author lists or affiliations (`expand_mentions` skips those sections).
     - A bare generic noun ("cells", "neurons", "brain", "gene", "human", "disease") is
       an entity only when the paper uses it for a specific referent; its key is then
-      that referent (`homo_sapiens`, `pyramidal_neuron`). Never prefix a DOI or paper
-      id to a key to get past the `generic_keys` guardrail — it breaks cross-paper
-      identity. The batch runner drops a generic kg_plan key and lets the trusted
-      ontology name the entity.
+      that referent (`homo_sapiens`, `pyramidal_neuron`). Do not write a generic key
+      in kg_plan, and do not invent a paper prefix yourself: leave the key out. The
+      converter then derives it (trusted ontology's preferred label, else the
+      algorithm), and if it is still generic, deliberately qualifies it with the paper
+      id (`fnsyn_2023_1274383_neuron`) so it stays a paper-local entity — a missed
+      cross-paper merge is recoverable, a wrong one is not. The batch runner drops
+      generic kg_plan keys for this reason.
     - Keys are singular (`calcium_dye`, not `calcium_dyes`); mass nouns and fields stay
       as they are (`transcriptomics`).
     - Use the extractor prompt's own label set. An invented label becomes

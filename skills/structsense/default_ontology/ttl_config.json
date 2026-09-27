@@ -183,7 +183,8 @@
       "publication",
       "document_version",
       "sentence",
-      "section"
+      "section",
+      "document_ingestion"
     ]
   },
   "relation_range_hints": {
@@ -228,5 +229,14 @@
   "labels": {
     "_comment": "rdfs:label is a node's short NAME (what a graph viewer shows), never an explanation: structural nodes are named by kind ('annotation v1', 'grounding review', 'mapping decision CL:0000617', 'sentence 12'); what they relate is in their properties, and prose (evidence, rationale, summaries) is a string (rdfs:comment, ner:reviewComment, ner:sentenceText). A longer name keeps its full text as rdfs:comment and is cut to max_length; validate_ttl rejects labels over it.",
     "max_length": 60
-  }
+  },
+  "namespace_patterns": [
+    {
+      "_comment": "BioPortal's own PURLs for ontologies with no OBO PURL (MESH, SNOMEDCT, LNC, OMIM, MEDLINEPLUS, ...): the acronym is the prefix. A prefix that already names another namespace (e.g. an OBO one) is never reused.",
+      "regex": "^http://purl\\.bioontology\\.org/ontology/([A-Za-z][A-Za-z0-9_.-]*)/",
+      "prefix_group": 1
+    }
+  ],
+  "source_path": "name",
+  "_source_path": "ner:sourcePath records the document's file NAME ('name', default) \u2014 never the user's local directory \u2014 or the full path ('full')."
 }

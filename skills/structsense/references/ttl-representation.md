@@ -83,6 +83,17 @@ gives readable `kb/<paper-slug>/<kind>-<slug>` IRIs for debugging only; the gate
 rejects them unless that scheme is set, and rejects **blank nodes always** — an
 unnamed node cannot be merged, referenced or reviewed.
 
+**The document.** `ner:Publication` carries title, DOI, PMID/PMCID, `dcterms:issued`,
+journal (`dcterms:bibliographicCitation`) and its authors — `prov:wasAttributedTo`
+and `dcterms:creator` to `prov:Person` nodes (UUID from `agent|orcid:<id>` or
+`agent|person:<name>`, shared across papers), with the printed order in an
+`rdfs:comment` and where each field was read from (`scripts/doc_metadata.py`). A PDF
+or XML source gives two `ner:DocumentVersion`s: the source document and the extracted
+text, `prov:wasDerivedFrom` it and `prov:wasGeneratedBy` a
+`ner:DocumentIngestionActivity` associated with the loader backend (a software agent
+with its version). Mentions and offsets belong to the text. `ner:sourcePath` is the
+file name only.
+
 **Labels are names.** `rdfs:label` is what a graph viewer draws on the node, so it
 is short (≤ `labels.max_length`, 60) and never prose: entities carry their
 normalized label, mentions their surface form, structural nodes their kind

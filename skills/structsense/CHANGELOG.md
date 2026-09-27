@@ -38,6 +38,25 @@ or config; SKILL.md rules 22–24 and "Corpus requests" say how to use them.
 - **Labels → classes.** 17 extractor labels seen in real runs now map to declared
   classes; 4 redundant entries removed (a label that is a class resolves by itself).
 - `pipeline.py --extractor` defaults to `claude-code` inside Claude Code.
+- **Document provenance.** New `scripts/doc_metadata.py` reads title, DOI, PMID/PMCID,
+  date, journal and authors (with ORCID) from the document itself — JATS front
+  matter, PDF metadata, the DOI printed in the text, the file name — before the
+  model's chunk-1 metadata fills gaps; `metadata_sources` says which. The TTL now has
+  the authors as `prov:Person`s (`prov:wasAttributedTo` / `dcterms:creator`, UUID by
+  ORCID or name), the source document (its own checksum and media type) and the
+  extracted text as a second `ner:DocumentVersion` `prov:wasDerivedFrom` it, generated
+  by a `ner:DocumentIngestionActivity` that names the loader backend (pymupdf4llm,
+  grobid, docling, jats ...), its version and the character count.
+- **Paths.** `ner:sourcePath` is the file name only (`ttl_config.json` `source_path`:
+  `name` | `full`); no local directory is written.
+- **One classification node per reading**, shared by every mention read that way
+  (the example: 67 instead of 1,039); labels drop the kind word the type already
+  says ("Dataset", not "classification Dataset").
+- **BioPortal namespaces.** `namespace_patterns` registers
+  `http://purl.bioontology.org/ontology/<ACRONYM>/` as `<ACRONYM>` on first use, so
+  MESH / SNOMEDCT / LNC / OMIM mappings are kept instead of dropped.
+- `batch retry <stem> --from-stage ttl` re-renders from the kept final JSON and
+  kg_plan (metadata re-read), no re-extraction.
 
 ## 0.9.0 — Turtle is the deliverable; trusted ontologies first; a judge panel, not a score
 

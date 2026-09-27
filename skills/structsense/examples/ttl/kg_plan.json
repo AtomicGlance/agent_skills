@@ -254,13 +254,13 @@
    "normalized_key": "inhibitory_neuron_pdp",
    "normalized_label": "inhibitory (I) neuron",
    "class": "InhibitoryNeuron",
+   "broader_key": "neuron",
    "relations": [
     {
      "predicate": "located_in",
      "target_key": "pdp_posterior_dorsal_telencephalon"
     }
-   ],
-   "broader_key": "neuron"
+   ]
   },
   "I|CellType": {
    "normalized_key": "inhibitory_neuron_pdp",
@@ -307,13 +307,13 @@
    "normalized_key": "mitral_cell",
    "normalized_label": "mitral cell",
    "class": "ProjectionNeuron",
-   "broader_key": "neuron",
    "relations": [
     {
      "predicate": "located_in",
      "target_key": "olfactory_bulb"
     }
-   ]
+   ],
+   "broader_key": "neuron"
   },
   "neural manifolds|Other": {
    "normalized_key": "neural_manifold",
@@ -480,14 +480,14 @@
    "normalized_key": "pdp_posterior_dorsal_telencephalon",
    "normalized_label": "posterior zone of dorsal telencephalon (pDp/Dp)",
    "class": "BrainRegion",
-   "see_also_keys": [
-    "piriform_cortex"
-   ],
    "relations": [
     {
      "predicate": "part_of",
      "target_key": "telencephalon"
     }
+   ],
+   "see_also_keys": [
+    "piriform_cortex"
    ]
   },
   "Dp|BrainRegion": {
@@ -615,6 +615,7 @@
    "normalized_key": "tg_alphatubulin_gcamp6s",
    "normalized_label": "Tg[alphaTubulin:GCaMP6s] transgenic zebrafish line",
    "class": "Strain",
+   "broader_key": "danio_rerio",
    "relations": [
     {
      "predicate": "has_participant",
@@ -624,8 +625,7 @@
      "predicate": "has_participant",
      "target_key": "gcamp6s"
     }
-   ],
-   "broader_key": "danio_rerio"
+   ]
   },
   "Trp|Chemical": {
    "normalized_key": "l_tryptophan",
