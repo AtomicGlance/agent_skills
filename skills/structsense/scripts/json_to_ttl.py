@@ -1202,8 +1202,10 @@ class TurtleBuilder:
                         f"Match tier for {ref[1]} was not judged; {self.cfg.default_tier} is the configured default."))
                 if plan_note:
                     self.add(ent["node"], RDFS.comment, Literal(plan_note))
-                if self.profile == "full":
-                    self.emit_decision(ent, concept, ref, rel, it, single)
+                # the mapping decision (candidate, rank, score, method, status,
+                # confidence) is provenance of the IRI itself, so every profile keeps
+                # it; compact drops only per-mention annotation/review history
+                self.emit_decision(ent, concept, ref, rel, it, single)
                 ent.setdefault("concept_ids", []).append(single)
                 ent["coordinated"] = ent.get("coordinated") or bool(coordinated_slots(it))
                 emitted += 1
