@@ -660,6 +660,8 @@ def _main():
     ap.add_argument("--format", choices=["ttl", "json"], default="ttl",
                     help="ttl (default): <stem>.ttl, validated; the working JSON is transient. "
                          "json: the legacy <stem>_final.json")
+    ap.add_argument("--entity-views", action="store_true",
+                    help="also write <stem>.entities.json / .entities.ttl next to the TTL")
     ap.add_argument("--keep-json", action="store_true",
                     help="with --format ttl, keep the working JSON under <out-dir>/.structsense/")
     ap.add_argument("--out-dir", default=None, help="where results go (default: beside each input)")
@@ -812,8 +814,9 @@ def _main():
                 for k, v in list(gate["violations"].items())[:5]:
                     print(f"  [{k}] {v[:3]}", file=sys.stderr)
                 continue
-            from entity_view import write_entity_views
-            write_entity_views(ttl, out_path)
+            if args.entity_views:
+                from entity_view import write_entity_views
+                write_entity_views(ttl, out_path)
             written.append(work_json)
             ttl_written.append(out_path)
             print(f"  {conv['triples']} triples; gate: VALID ({gate['warning_count']} warning(s))",

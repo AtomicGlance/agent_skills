@@ -1123,10 +1123,17 @@ class TurtleBuilder:
         """The item's sentence when it contains the surface; else, when the source text
         is at hand and the offsets select the surface, the sentence around the offsets
         (so a sentence cut at a line-wrap hyphen is repaired, not propagated)."""
+        # with the source text at hand the sentence is ALWAYS derived from it, so every
+        # extraction variant that finds this span links the same Sentence node (the
+        # mention IRI is shared across variants); the item's own sentence is a fallback
         sent = it.get("sentence")
+        start, end, text = it.get("start"), it.get("end"), self.source_text
+        if text and isinstance(start, int) and isinstance(end, int) and text[start:end] == surface:
+            canon = sentence_around(text, start, end)
+            if canon and surface in canon:
+                return canon
         if sent and surface in sent:
             return sent
-        start, end, text = it.get("start"), it.get("end"), self.source_text
         if text and isinstance(start, int) and isinstance(end, int) and text[start:end] == surface:
             fixed = sentence_around(text, start, end)
             if fixed and surface in fixed:
@@ -1206,6 +1213,31 @@ class TurtleBuilder:
             self.add(ent["node"], RDFS.comment, Literal(
                 f"No tool-verified ontology mapping ({why}); checked via {self.mapper_name} on {self.date}."))
             self.counts["unmapped_entities"] += 1
+            self.brainkb_default_concept(ent)
+
+    def brainkb_default_concept(self, ent: dict) -> None:
+        """No source mapped this entity: link it to a provisional BrainKB concept
+        (ttl_config.json unmapped_default), deterministic by key so the same referent
+        gets the same concept in every paper. Not an external mapping: no mapping
+        decision is written, and the concept says it is a BrainKB default."""
+        cfg = (self.cfg.raw.get("unmapped_default") or {})
+        if not cfg.get("enabled"):
+            return
+        base, prefix = cfg.get("base", "https://brainkb.org/concept/"), cfg.get("prefix", "BRAINKB")
+        local = str(uuid.uuid5(self.cfg.uuid_ns, f"brainkb-concept|{ent['key']}"))
+        iri = base + local
+        # its label comes from the KEY, not this paper's wording, so every paper that
+        # meets the same referent writes the same global concept
+        concept = self.concept_node((iri, f"{prefix}:{local}", prefix),
+                                    {"ontology_label": ent["key"].replace("_", " ")})
+        if (concept, RDFS.comment, None) not in self.g:
+            self.add(concept, RDFS.comment, Literal(
+                "BrainKB default concept: no external ontology term was found for this entity; "
+                "provisional, to be materialized or replaced by curation."))
+        tier = cfg.get("tier", "exactMatch")
+        self.add(ent["node"], NER.resolvedToConcept, concept)
+        self.add(ent["node"], MATCH_TIERS.get(tier, SKOS.exactMatch), URIRef(iri))
+        self.counts["brainkb_default_concepts"] += 1
 
     def concept_node(self, ref: tuple[str, str, str], it: dict) -> URIRef:
         iri, curie, acr = ref
@@ -1238,7 +1270,9 @@ class TurtleBuilder:
         self.add(ver, RDF.type, NER.OntologyVersion)
         self.add(ver, NER.versionOfOntology, hub)
         self.add(hub, NER.hasOntologyVersion, ver)
-        vs = f"as served by {self.mapper_name}, {self.date}"
+        default = (self.cfg.raw.get("unmapped_default") or {}).get("prefix", "BRAINKB")
+        vs = (f"BrainKB default concepts (structsense {SKILL_VERSION}), {self.date}" if key == default.upper()
+              else f"as served by {self.mapper_name}, {self.date}")
         self.add(ver, NER.ontologyVersionString, self.lit(vs, XSD.string))
         self.label(ver, f"{acr} ({vs})")
         self.add(self.map_run, NER.usedOntologyVersion, ver)
@@ -2043,6 +2077,9 @@ def _main() -> int:
     ap.add_argument("--out", type=Path, help="output .ttl (default <stem>.ttl)")
     ap.add_argument("--report", type=Path, help="write the conversion report JSON here")
     ap.add_argument("--profile", choices=["full", "compact"], default="compact")
+    ap.add_argument("--entity-views", action="store_true",
+                    help="also write <stem>.entities.json / .entities.ttl (regenerable any time with "
+                         "python -m scripts.entity_view <stem>.ttl)")
     ap.add_argument("--paper-slug", help="override the paper namespace slug")
     ap.add_argument("--kb-ns", default=DEFAULT_KB_NS, help="base for per-paper IRIs")
     ap.add_argument("--ontology", type=Path, default=DEFAULT_ONTOLOGY)
@@ -2081,8 +2118,9 @@ def _main() -> int:
         source_path=args.source, ttl_config=args.ttl_config, variant=args.variant)
     out = args.out or default_ttl_path(args.result)
     out.write_text(ttl)
-    from entity_view import write_entity_views
-    report.update(write_entity_views(ttl, out))
+    if args.entity_views:  # one TTL per source by default; views on request
+        from entity_view import write_entity_views
+        report.update(write_entity_views(ttl, out))
     if args.report:
         args.report.write_text(json.dumps(report, indent=2) + "\n")
     c = report["counts"]

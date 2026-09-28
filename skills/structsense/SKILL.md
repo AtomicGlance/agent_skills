@@ -27,11 +27,13 @@ reports and papers. A source does not need a DOI or publication metadata.
   context. Mention expansion must not propagate relations, cell context or
   mapping decisions from one occurrence to another. A relation may differ by
   occurrence, source, time or condition.
-- **Entity-first output.** Deliver `<stem>.entities.json` (one record per entity,
-  nested mentions and evidenced relations) and `<stem>.entities.ttl` (graph view).
-  Keep validated `<stem>.ttl` as the canonical provenance graph. The default
-  representation is compact; `--profile full` includes detailed audit records.
-  Do not use the graph-view projection as the validated ingestion graph.
+- **One file per source.** The deliverable is the validated `<stem>.ttl` (compact
+  by default; `--profile full` adds audit records). Entity views
+  (`<stem>.entities.json`, one record per entity with nested mentions and evidenced
+  relations; `<stem>.entities.ttl`, a graph-viewing projection with one node per
+  surface form linked to its sentences) are opt-in (`--entity-views`) or made later
+  from any TTL with `python -m scripts.entity_view <stem>.ttl`; they are never the
+  validated ingestion graph.
 - **NER scope.** Resolve identity and extract source-stated relations; causal
   chains and external anatomy/hierarchy enrichment require an explicit request.
   Do not invent links between entities that merely share a category.
@@ -175,7 +177,7 @@ python -m scripts.batch status --manifest <dir>/.structsense/batch.json
 5b. **Identity plan (default for NER)** → `prompts/kg-plan.md`: write `kg_plan.json` before judging — coreference keys and finer classes; evidence-bearing relations when stated; causal chains only when requested — so the kg-keys and claims judges review it. `{}` is a valid plan when the paper gives nothing to add; skipping the step is the exception (`json_to_ttl --no-kg-plan`), not the default. `pipeline.py` writes it unless `--kg-plan-model none`.
 6. **Multiple models for cost?** Use the cheapest capable model for extraction (often a small open model), tools for candidate retrieval plus contextual mapping review, and a fast model for judging. See `references/model-selection.md`.
 6b. **Relations come with the entities.** Every NER prompt asks the extractor for the relations the text states per mention (`relations`, `broader` for hierarchy — CellSubtype → CellType → CellClass, region → region), and the paper's causal claims (`causal_relations`, e.g. genotype → phenotype). `scripts/relations.py` resolves them to extracted entities; the claims judge reviews them; they land in the TTL as RO/BFO edges, `skos:broader` and the causal module.
-7. **Represent (always for NER / resource)** → load `references/ttl-representation.md` + `references/key-normalization.md`. `python -m scripts.json_to_ttl <result.json> --kg-plan kg_plan.json --source <pdf>` → `python -m scripts.validate_ttl <stem>.ttl` (must exit 0). Deliver the entity views with the validated canonical `.ttl`. Working-stage JSON remains internal.
+7. **Represent (always for NER / resource)** → load `references/ttl-representation.md` + `references/key-normalization.md`. `python -m scripts.json_to_ttl <result.json> --kg-plan kg_plan.json --source <pdf>` → `python -m scripts.validate_ttl <stem>.ttl` (must exit 0). Deliver the validated `.ttl` (entity views only on request). Working-stage JSON remains internal.
 
 ## Hard rules
 

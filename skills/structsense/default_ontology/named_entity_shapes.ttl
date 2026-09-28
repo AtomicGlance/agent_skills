@@ -266,7 +266,9 @@ nsh:OntologyConceptShape a sh:NodeShape ;
     sh:property [ sh:path ner:conceptIdentifier ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
                   sh:pattern "^[A-Za-z][A-Za-z0-9_.-]*:\\S+$" ;
                   sh:message "conceptIdentifier is a CURIE (PREFIX:LOCAL), e.g. CL:4023017." ] ;
-    sh:property [ sh:path ner:conceptInOntologyVersion ; sh:minCount 1 ; sh:maxCount 1 ; sh:class ner:OntologyVersion ] ;
+    # a concept node is GLOBAL (one per IRI across papers) while each paper records the
+    # ontology version it saw, so a merged store legitimately holds several versions
+    sh:property [ sh:path ner:conceptInOntologyVersion ; sh:minCount 1 ; sh:class ner:OntologyVersion ] ;
     sh:property [ sh:path ner:preferredLabel ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path rdfs:label ; sh:minCount 1 ] .
 

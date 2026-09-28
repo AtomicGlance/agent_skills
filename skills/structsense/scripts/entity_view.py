@@ -1,14 +1,18 @@
 """Entity-focused views of a validated extraction graph (not an ingestion graph).
 
 The JSON nests occurrences and evidence under each global entity. The Turtle
-projection contains entity nodes and positive entity-to-entity edges only; audit
-records stay in the canonical extraction graph. No ontology hierarchy is invented.
+projection contains entity nodes, positive entity-to-entity edges and, for graph
+viewing, ONE node per distinct surface form of an entity ("Na+ channels") linked to
+every sentence it occurs in — instead of one node per occurrence, which is what the
+canonical graph keeps (an EntityMention is one span). Audit records stay in the
+canonical extraction graph. No ontology hierarchy is invented.
 """
 from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from rdflib import Graph, Namespace, Literal
+import uuid
+from rdflib import Graph, Namespace, Literal, URIRef
 from rdflib.namespace import RDF, RDFS, SKOS, XSD
 
 NER = Namespace("https://brainkb.org/ner/")
@@ -57,6 +61,24 @@ def entity_views(graph: Graph) -> tuple[Graph, dict]:
         view.add((entity, NER.mentionCount, Literal(len(mentions), datatype=XSD.nonNegativeInteger)))
         for p, o in graph.predicate_objects(entity):
             if o in entities and p != RDF.type: view.add((entity, p, o))
+        # one node per surface form, linked to all its sentences (view only)
+        by_surface: dict = {}
+        for mention in graph.objects(entity, NER.hasMention):
+            surf = " ".join(str(graph.value(mention, RDFS.label) or graph.value(mention, NER.surfaceForm) or "").split())
+            by_surface.setdefault(surf, []).append(mention)
+        for surf, ms in sorted(by_surface.items()):
+            node = URIRef(f"{str(entity).rsplit('/', 1)[0]}/{uuid.uuid5(uuid.NAMESPACE_URL, f'surface|{entity}|{surf}')}")
+            view.add((node, RDF.type, NER.SurfaceFormView))
+            view.add((node, RDFS.label, Literal(surf)))
+            view.add((node, NER.refersToEntity, entity))
+            view.add((node, NER.mentionCount, Literal(len(ms), datatype=XSD.nonNegativeInteger)))
+            for m in ms:
+                sent = graph.value(m, NER.inSentence)
+                if sent is not None:
+                    view.add((node, NER.inSentence, sent))
+                    for p in (RDFS.label, NER.sentenceText):
+                        for o in graph.objects(sent, p):
+                            view.add((sent, p, o))
         rows.append({"iri": str(entity), "key": value(entity, NER.normalizedEntityKey),
                      "label": value(entity, NER.normalizedEntityLabel), "types": values(entity, RDF.type),
                      "sources": values(entity, PROV.hadPrimarySource), "mention_count": len(mentions),

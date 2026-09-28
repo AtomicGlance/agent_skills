@@ -160,6 +160,7 @@ def cmd_init(args) -> int:
         m["settings"] = {**(m.get("settings") or {}),
                          "chunk_chars": args.chunk_chars, "recall": not args.no_recall,
                          "judges": not args.no_judges, "keep_json": args.keep_json,
+                         "entity_views": args.entity_views,
                          "mapper_url": args.mapper_url,
                          "mapping_sources": [x.strip() for x in (args.mapping_sources or "").split(",") if x.strip()] or None,
                          "loader": {"docling": not args.no_docling,
@@ -511,8 +512,10 @@ def finish(job: Job, result: dict, plan: Optional[dict]) -> dict:
     job.ttl.write_text(ttl)
     gate = validate_file(job.ttl)
     if gate["ok"]:
-        from entity_view import write_entity_views
-        views = write_entity_views(ttl, job.ttl)
+        views = {}
+        if job.settings.get("entity_views"):  # one TTL per paper by default
+            from entity_view import write_entity_views
+            views = write_entity_views(ttl, job.ttl)
         with contextlib.suppress(FileNotFoundError):
             job.ttl.with_suffix(".invalid.ttl").unlink()
         return {"status": "done", "ttl": str(job.ttl), **views, "triples": conv["triples"],
@@ -911,6 +914,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     a.add_argument("--no-recall", action="store_true", help="skip the mask-recall pass")
     a.add_argument("--no-judges", action="store_true", help="skip the judge ensemble (not recommended)")
     a.add_argument("--keep-json", action="store_true", help="keep chunk/judge work files after a paper is done")
+    a.add_argument("--entity-views", action="store_true",
+                   help="also write <stem>.entities.json / .entities.ttl (python -m scripts.entity_view makes "
+                        "them later from any TTL)")
     a.add_argument("--mapper-url", default=None, help="local hybrid mapper (default from concept_mapping.json)")
     a.add_argument("--mapping-sources", default=None,
                    help="override concept_mapping.json sources_priority, e.g. 'trusted,bioportal' "

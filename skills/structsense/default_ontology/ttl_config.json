@@ -124,7 +124,8 @@
     "UniProtKB": "https://www.uniprot.org/uniprotkb/{id}",
     "NIFSTD": "http://uri.neuinfo.org/nif/nifstd/{id}",
     "biolink": "https://w3id.org/biolink/vocab/{id}",
-    "MGI": "http://www.informatics.jax.org/marker/{id}"
+    "MGI": "http://www.informatics.jax.org/marker/{id}",
+    "BRAINKB": "https://brainkb.org/concept/{id}"
   },
   "curie_fallback_template": "https://identifiers.org/{prefix}:{id}",
   "mapping_method_by_source": {
@@ -322,5 +323,12 @@
       "literature": "author_assertion",
       "cited": "author_assertion"
     }
+  },
+  "unmapped_default": {
+    "_comment": "An entity no source could map gets a deterministic BrainKB concept (base + uuid5 of 'brainkb-concept|<normalizedEntityKey>'), so every entity has a concept to query and curate; the same key gives the same concept in every paper. It is marked provisional (rdfs:comment + ner:conceptIdentifier prefix BRAINKB) and is never a claim about an external ontology; materialize or replace it separately. enabled=false restores the plain honest gap.",
+    "enabled": true,
+    "base": "https://brainkb.org/concept/",
+    "prefix": "BRAINKB",
+    "tier": "exactMatch"
   }
 }

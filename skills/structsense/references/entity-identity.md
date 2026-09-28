@@ -39,9 +39,10 @@ into a positive edge. A shared type is not an anatomical or causal relation.
 
 The canonical `<stem>.ttl` retains provenance and mapping records and passes
 OWL/SHACL validation. Compact is the default; full adds annotation and review
-history. The exporter also writes `<stem>.entities.json` with one record per
-entity and nested occurrences/assertions, and `<stem>.entities.ttl` for graph
-viewing. The projection is deliberately not the complete ingestion graph.
+history. On request (`--entity-views`) the exporter also writes
+`<stem>.entities.json` with one record per entity and nested occurrences/assertions,
+and `<stem>.entities.ttl` for graph viewing (one node per surface form, linked to
+every sentence it occurs in). The projection is deliberately not the complete ingestion graph.
 Existing TTL can be projected with `python -m scripts.entity_view <file.ttl>`.
 
 ## Validation
