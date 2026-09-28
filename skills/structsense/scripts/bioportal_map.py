@@ -32,6 +32,23 @@ BIOPORTAL_SEARCH = "https://data.bioontology.org/search"
 MAX_QUERY_LENGTH = 500
 
 
+class BioPortalUnavailable(RuntimeError):
+    """BioPortal did not answer (timeouts, 5xx, 429 after backoff)."""
+
+
+def _norm_forms(text: str) -> set:
+    """Normalized forms of a name for equality: case, punctuation, hyphens and a
+    plural 's' do not matter ("Long-term potentiation" == "long term potentiation")."""
+    import re as _re
+    s = _re.sub(r"[^a-z0-9]+", " ", (text or "").lower()).strip()
+    if not s:
+        return set()
+    out = {s}
+    if s.endswith("s") and len(s) > 3:
+        out.add(s[:-1])
+    return out
+
+
 class BioPortalMapper:
     """Throttled BioPortal client.
 
@@ -87,11 +104,11 @@ class BioPortalMapper:
             "q": term[:MAX_QUERY_LENGTH],
             "apikey": self.api_key,
             "display_context": "false",
-            "include": "prefLabel,definition",
-            "pagesize": max_results,
-            # exact prefLabel/synonym matches only: fuzzy hits are how "mouse" became
-            # Mouse mammary tumor virus (BIOPORTAL_EXACT=0 to relax)
-            "require_exact_match": "false" if os.environ.get("BIOPORTAL_EXACT", "1") == "0" else "true",
+            "include": "prefLabel,synonym",
+            "pagesize": max(max_results, 10),
+            # BioPortal's require_exact_match misses synonyms (GO "synaptic transmission");
+            # its fuzzy ranking gives "mouse" -> Mouse mammary tumor virus. So search
+            # normally and let map_one accept only a hit whose label or synonym IS the term.
         }
         if ontologies:
             params["ontologies"] = ",".join(ontologies)
@@ -113,7 +130,9 @@ class BioPortalMapper:
                 continue
             resp.raise_for_status()
             return resp.json().get("collection", []) or []
-        return []
+        # every attempt failed: raise (an exception is not cached by lru_cache), so a
+        # timeout is reported as an error, never remembered as "no match"
+        raise BioPortalUnavailable(f"BioPortal unreachable for {term!r} after retries")
 
     # ------------------------------------------------------------------
     # Public API
@@ -124,7 +143,12 @@ class BioPortalMapper:
         provenance) — `unmapped` when no results.
         """
         ont_tuple = tuple(ontologies or ())
-        hits = self._search(term, ont_tuple, max_results)
+        try:
+            hits = self._search(term, ont_tuple, max_results)
+        except BioPortalUnavailable as e:
+            logger.warning("%s", e)
+            return {"term": term, "ontology_id": None, "ontology_label": None, "ontology": None,
+                    "concept_mapping_provenance": "unmapped", "remote_error": "bioportal unreachable"}
         if not hits:
             return {
                 "term": term,
@@ -133,9 +157,20 @@ class BioPortalMapper:
                 "ontology": None,
                 "concept_mapping_provenance": "unmapped",
             }
-        # the first hit the caller can represent (e.g. a namespace in the prefix
-        # registry), not blindly hit 1
-        top = next((h for h in hits if accept is None or accept(h.get("@id") or "")), None)
+        # the first hit that NAMES the term (its label, else one of its synonyms,
+        # after normalization) and that the caller can represent — never a fuzzy hit
+        want = _norm_forms(term)
+        top, kind = None, None
+        for want_kind in ("label", "synonym"):
+            for h in hits:
+                if accept is not None and not accept(h.get("@id") or ""):
+                    continue
+                names = [h.get("prefLabel") or ""] if want_kind == "label" else list(h.get("synonym") or [])
+                if any(_norm_forms(n) & want for n in names):
+                    top, kind = h, want_kind
+                    break
+            if top is not None:
+                break
         if top is None:
             return {"term": term, "ontology_id": None, "ontology_label": None, "ontology": None,
                     "concept_mapping_provenance": "unmapped",
@@ -146,6 +181,8 @@ class BioPortalMapper:
             "ontology_label": top.get("prefLabel"),
             "ontology": self._ontology_shortname(top),
             "concept_mapping_provenance": "tool",
+            "ontology_match_type": f"bioportal_{kind}",
+            "match_tier": "exactMatch" if kind == "label" else "closeMatch",
         }
 
     def map_batch(self, terms: Iterable[str],

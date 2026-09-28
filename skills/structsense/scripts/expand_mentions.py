@@ -170,6 +170,15 @@ def _as_lexicon(extraction: dict) -> dict:
             "causal_relations": extraction.get("causal_relations") or []}
 
 
+_CELL_LABELS = {"celltype", "cellclass", "cellsubtype", "cellpopulation", "cellontologyterm", "neuron",
+                "interneuron", "glialcell", "morphologyclass"}
+
+
+def _is_cell_label(label: str) -> bool:
+    lab = (label or "").replace("_", "").replace(" ", "").lower()
+    return lab in _CELL_LABELS or lab.endswith("cell") or lab.endswith("celltype")
+
+
 def expand(lexicon: dict, text: str, *, model: str = "unknown", keep_nested: bool = False,
            include_sections: Iterable[str] = ()) -> tuple[list[dict], dict]:
     """(items, report). Items sorted by start; report names entries with 0 hits and
@@ -242,7 +251,12 @@ def expand(lexicon: dict, text: str, *, model: str = "unknown", keep_nested: boo
         # "DNA methylation" is not a separate mention. keep_nested (cns-cells) keeps
         # nested spans of OTHER labels (a marker inside a cell-type span) but still drops
         # a same-label repeat.
-        if inside and (not keep_nested or any(k[2]["label"] == h[2]["label"] for k in inside)):
+        # nested spans are kept only INSIDE a cell mention (a marker, region or layer
+        # within "PV+ layer 5 interneurons"); "neural" inside "neural development" or
+        # "mouse" inside "mouse models" is a modifier, not a mention
+        if inside and (not keep_nested
+                       or any(k[2]["label"] == h[2]["label"] for k in inside)
+                       or not any(_is_cell_label(k[2]["label"]) for k in inside)):
             continue
         kept.append(h)
 

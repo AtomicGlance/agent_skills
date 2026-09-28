@@ -66,7 +66,13 @@
     "exclude_iri_patterns": [
       "^https://identifiers\\.org/brain-bican/vocab/[A-Za-z]+#"
     ],
-    "_exclude_iri_patterns": "Regexes over candidate IRIs that are never mapping targets: terms a trusted file declares that are not domain concepts. BKE's '<Enum>#<value>' IRIs (AbbreviationEntityType#gene, AuthorityType#NCBI, ANATOMICALDIRECTION#..., Region#...) are schema permissible values; matching them maps the generic word 'gene' to an enum value. Applied at query time, no re-index."
+    "_exclude_iri_patterns": "Regexes over candidate IRIs that are never mapping targets: terms a trusted file declares that are not domain concepts. BKE's '<Enum>#<value>' IRIs (AbbreviationEntityType#gene, AuthorityType#NCBI, ANATOMICALDIRECTION#..., Region#...) are schema permissible values; matching them maps the generic word 'gene' to an enum value. Applied at query time, no re-index.",
+    "fallback_match_on": [
+      "narrow_synonym",
+      "broad_synonym",
+      "related_synonym"
+    ],
+    "_fallback_match_on": "Weaker synonym types tried only when no label/exact synonym matches in any eligible ontology; graded by match_type_tiers (broad_synonym -> narrowMatch, narrow_synonym -> broadMatch, related_synonym -> relatedMatch) and reviewed by the mapping judge. Remove to require identity-strength matches only."
   },
   "label_routing": {
     "_comment": "Extractor label -> id prefixes acceptable for that label, in preference order. A FILTER, never a reordering of trusted ontologies (priority.md decides that): a candidate under a listed prefix, or under the trusted row's own CURIE prefix, is accepted. Labels absent here accept any prefix. The same list is passed to remote mappers as their ontology filter.",
@@ -253,7 +259,9 @@
     "narrow_synonym": "broadMatch",
     "broad_synonym": "narrowMatch",
     "symbol": "exactMatch",
-    "local_name": "closeMatch"
+    "local_name": "closeMatch",
+    "bioportal_label": "exactMatch",
+    "bioportal_synonym": "closeMatch"
   },
   "remote": {
     "local_hybrid_url": "http://localhost:8000",
@@ -366,6 +374,10 @@
       "Protein": [
         "PR",
         "NCIT"
+      ],
+      "CellType": [
+        "CL",
+        "EFO"
       ]
     },
     "default_ontologies": [
@@ -393,5 +405,158 @@
       "MmusDv",
       "HsapDv"
     ]
+  },
+  "curated_mappings": {
+    "_comment": "User-curated overrides, consulted before every other source: '<term>|<label>' or '<term>' -> mapping. Only for terms the ontology files systematically get wrong (NCBITaxon puts the common names 'mice'/'rats' under the genus). Edit freely; each hit is recorded as mapping_source 'curated'.",
+    "human|species": {
+      "ontology_id": "http://purl.obolibrary.org/obo/NCBITaxon_9606",
+      "ontology_label": "Homo sapiens",
+      "ontology": "NCBITaxon"
+    },
+    "humans|species": {
+      "ontology_id": "http://purl.obolibrary.org/obo/NCBITaxon_9606",
+      "ontology_label": "Homo sapiens",
+      "ontology": "NCBITaxon"
+    },
+    "mouse|species": {
+      "ontology_id": "http://purl.obolibrary.org/obo/NCBITaxon_10090",
+      "ontology_label": "Mus musculus",
+      "ontology": "NCBITaxon"
+    },
+    "mice|species": {
+      "ontology_id": "http://purl.obolibrary.org/obo/NCBITaxon_10090",
+      "ontology_label": "Mus musculus",
+      "ontology": "NCBITaxon"
+    },
+    "house mouse|species": {
+      "ontology_id": "http://purl.obolibrary.org/obo/NCBITaxon_10090",
+      "ontology_label": "Mus musculus",
+      "ontology": "NCBITaxon"
+    },
+    "laboratory mouse|species": {
+      "ontology_id": "http://purl.obolibrary.org/obo/NCBITaxon_10090",
+      "ontology_label": "Mus musculus",
+      "ontology": "NCBITaxon"
+    },
+    "rat|species": {
+      "ontology_id": "http://purl.obolibrary.org/obo/NCBITaxon_10116",
+      "ontology_label": "Rattus norvegicus",
+      "ontology": "NCBITaxon"
+    },
+    "rats|species": {
+      "ontology_id": "http://purl.obolibrary.org/obo/NCBITaxon_10116",
+      "ontology_label": "Rattus norvegicus",
+      "ontology": "NCBITaxon"
+    },
+    "laboratory rat|species": {
+      "ontology_id": "http://purl.obolibrary.org/obo/NCBITaxon_10116",
+      "ontology_label": "Rattus norvegicus",
+      "ontology": "NCBITaxon"
+    },
+    "macaque|species": {
+      "ontology_id": "http://purl.obolibrary.org/obo/NCBITaxon_9544",
+      "ontology_label": "Macaca mulatta",
+      "ontology": "NCBITaxon"
+    },
+    "macaques|species": {
+      "ontology_id": "http://purl.obolibrary.org/obo/NCBITaxon_9544",
+      "ontology_label": "Macaca mulatta",
+      "ontology": "NCBITaxon"
+    },
+    "rhesus macaque|species": {
+      "ontology_id": "http://purl.obolibrary.org/obo/NCBITaxon_9544",
+      "ontology_label": "Macaca mulatta",
+      "ontology": "NCBITaxon"
+    },
+    "rhesus monkey|species": {
+      "ontology_id": "http://purl.obolibrary.org/obo/NCBITaxon_9544",
+      "ontology_label": "Macaca mulatta",
+      "ontology": "NCBITaxon"
+    },
+    "rhesus monkeys|species": {
+      "ontology_id": "http://purl.obolibrary.org/obo/NCBITaxon_9544",
+      "ontology_label": "Macaca mulatta",
+      "ontology": "NCBITaxon"
+    },
+    "marmoset|species": {
+      "ontology_id": "http://purl.obolibrary.org/obo/NCBITaxon_9483",
+      "ontology_label": "Callithrix jacchus",
+      "ontology": "NCBITaxon"
+    },
+    "marmosets|species": {
+      "ontology_id": "http://purl.obolibrary.org/obo/NCBITaxon_9483",
+      "ontology_label": "Callithrix jacchus",
+      "ontology": "NCBITaxon"
+    },
+    "common marmoset|species": {
+      "ontology_id": "http://purl.obolibrary.org/obo/NCBITaxon_9483",
+      "ontology_label": "Callithrix jacchus",
+      "ontology": "NCBITaxon"
+    },
+    "chimpanzee|species": {
+      "ontology_id": "http://purl.obolibrary.org/obo/NCBITaxon_9598",
+      "ontology_label": "Pan troglodytes",
+      "ontology": "NCBITaxon"
+    },
+    "chimpanzees|species": {
+      "ontology_id": "http://purl.obolibrary.org/obo/NCBITaxon_9598",
+      "ontology_label": "Pan troglodytes",
+      "ontology": "NCBITaxon"
+    },
+    "zebrafish|species": {
+      "ontology_id": "http://purl.obolibrary.org/obo/NCBITaxon_7955",
+      "ontology_label": "Danio rerio",
+      "ontology": "NCBITaxon"
+    },
+    "fruit fly|species": {
+      "ontology_id": "http://purl.obolibrary.org/obo/NCBITaxon_7227",
+      "ontology_label": "Drosophila melanogaster",
+      "ontology": "NCBITaxon"
+    },
+    "fruit flies|species": {
+      "ontology_id": "http://purl.obolibrary.org/obo/NCBITaxon_7227",
+      "ontology_label": "Drosophila melanogaster",
+      "ontology": "NCBITaxon"
+    },
+    "drosophila|species": {
+      "ontology_id": "http://purl.obolibrary.org/obo/NCBITaxon_7227",
+      "ontology_label": "Drosophila melanogaster",
+      "ontology": "NCBITaxon"
+    },
+    "c. elegans|species": {
+      "ontology_id": "http://purl.obolibrary.org/obo/NCBITaxon_6239",
+      "ontology_label": "Caenorhabditis elegans",
+      "ontology": "NCBITaxon"
+    },
+    "caenorhabditis elegans|species": {
+      "ontology_id": "http://purl.obolibrary.org/obo/NCBITaxon_6239",
+      "ontology_label": "Caenorhabditis elegans",
+      "ontology": "NCBITaxon"
+    },
+    "ferret|species": {
+      "ontology_id": "http://purl.obolibrary.org/obo/NCBITaxon_9669",
+      "ontology_label": "Mustela putorius furo",
+      "ontology": "NCBITaxon"
+    },
+    "ferrets|species": {
+      "ontology_id": "http://purl.obolibrary.org/obo/NCBITaxon_9669",
+      "ontology_label": "Mustela putorius furo",
+      "ontology": "NCBITaxon"
+    },
+    "pig|species": {
+      "ontology_id": "http://purl.obolibrary.org/obo/NCBITaxon_9823",
+      "ontology_label": "Sus scrofa",
+      "ontology": "NCBITaxon"
+    },
+    "pigs|species": {
+      "ontology_id": "http://purl.obolibrary.org/obo/NCBITaxon_9823",
+      "ontology_label": "Sus scrofa",
+      "ontology": "NCBITaxon"
+    },
+    "sheep|species": {
+      "ontology_id": "http://purl.obolibrary.org/obo/NCBITaxon_9940",
+      "ontology_label": "Ovis aries",
+      "ontology": "NCBITaxon"
+    }
   }
 }

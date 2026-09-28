@@ -265,6 +265,7 @@
             "judge_demoted",
             "trusted_ontology",
             "no_match",
+            "remote_error",
             null
           ]
         },

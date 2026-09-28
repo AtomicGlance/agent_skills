@@ -242,13 +242,13 @@
    "normalized_key": "ob_inhibitory_interneuron",
    "normalized_label": "olfactory bulb superficial inhibitory interneuron",
    "class": "Interneuron",
+   "broader_key": "inhibitory_neuron_pdp",
    "relations": [
     {
      "predicate": "located_in",
      "target_key": "olfactory_bulb"
     }
-   ],
-   "broader_key": "inhibitory_neuron_pdp"
+   ]
   },
   "inhibitory neurons|CellType": {
    "normalized_key": "inhibitory_neuron_pdp",
@@ -615,7 +615,6 @@
    "normalized_key": "tg_alphatubulin_gcamp6s",
    "normalized_label": "Tg[alphaTubulin:GCaMP6s] transgenic zebrafish line",
    "class": "Strain",
-   "broader_key": "danio_rerio",
    "relations": [
     {
      "predicate": "has_participant",
@@ -625,7 +624,8 @@
      "predicate": "has_participant",
      "target_key": "gcamp6s"
     }
-   ]
+   ],
+   "broader_key": "danio_rerio"
   },
   "Trp|Chemical": {
    "normalized_key": "l_tryptophan",

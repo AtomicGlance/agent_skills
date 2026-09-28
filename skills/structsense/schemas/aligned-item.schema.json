@@ -55,6 +55,7 @@
         "judge_demoted",
         "trusted_ontology",
         "no_match",
+        "remote_error",
         null
       ],
       "description": "How the alignment stage was run. Useful for debugging unexpected mappings."

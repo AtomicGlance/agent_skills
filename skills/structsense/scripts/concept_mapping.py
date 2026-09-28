@@ -550,6 +550,10 @@ class TrustedMapper:
         self.cfg = cfg
         tcfg = cfg.get("trusted_ontologies") or {}
         self.match_on = list(tcfg.get("match_on") or ["label", "exact_synonym"])
+        # weaker synonym types, used ONLY when no identity-type match exists anywhere
+        # (GO lists "synaptic transmission" as a broad synonym of "chemical synaptic
+        # transmission"); their skos tier comes from match_type_tiers, never exactMatch
+        self.fallback_on = [m for m in tcfg.get("fallback_match_on") or [] if m not in self.match_on]
         self.strategy = tcfg.get("strategy", "priority")
         self.singularize = bool(tcfg.get("singularize_query", True))
         self.camel = bool(tcfg.get("split_camel_case", True))
@@ -580,7 +584,7 @@ class TrustedMapper:
     def route(self, label: Optional[str]) -> Optional[list[str]]:
         return self.routing.get(label or "")
 
-    def candidates(self, term: str, label: Optional[str]) -> list[tuple]:
+    def candidates(self, term: str, label: Optional[str], weak: bool = False) -> list[tuple]:
         """Ranked [(rank, iri, match_type, source, prefix, label)] — best first."""
         if not self.available():
             return []
@@ -593,7 +597,7 @@ class TrustedMapper:
         found = []
         for src_name, key, iri, prefix, mt, lab in self.lexicon.query([k for k, _ in variants]):
             src = self.by_name.get(src_name)
-            if src is None or not src.admits(label) or mt not in self.match_on:
+            if src is None or not src.admits(label) or (mt not in self.match_on and not (weak and mt in self.fallback_on)):
                 continue
             if any(x.search(iri) for x in self.exclude):
                 continue
@@ -601,19 +605,26 @@ class TrustedMapper:
             if route is not None and p not in route and p not in self.always:
                 continue
             route_rank = route.index(p) if route and p in route else 0
-            mrank = self.match_on.index(mt)
+            order = self.match_on + self.fallback_on
+            mrank = order.index(mt)
             if self.strategy == "best_match":
                 rank = (mrank, vrank[key], src.priority, route_rank)
             else:  # priority.md decides first; the route orders prefixes inside one file
                 rank = (src.priority, route_rank, mrank, vrank[key])
             found.append((rank, iri, mt, src, prefix, lab))
         found.sort(key=lambda f: f[0])
-        return found
+        strong = [f for f in found if f[2] in self.match_on]
+        return strong if strong else found  # a weak synonym only when nothing names it exactly
 
-    def lookup(self, term: str, label: Optional[str] = None) -> dict:
-        memo_key = (term, label)
+    def lookup(self, term: str, label: Optional[str] = None, weak: bool = False) -> dict:
+        """weak=True: the last-resort pass over broad/narrow/related synonyms, run only
+        after every source (remote included) left the item unmapped, and never for a
+        bare abbreviation ("Ala" is a related synonym of the wrong CHEBI class)."""
+        if weak and self.abbrev_len and len(re.sub(r"[^A-Za-z0-9]", "", term)) <= self.abbrev_len:
+            return {"term": term, "concept_mapping_provenance": "unmapped"}
+        memo_key = (term, label, weak)
         if memo_key not in self._memo:
-            self._memo[memo_key] = self._decide(term, self.candidates(term, label))
+            self._memo[memo_key] = self._decide(term, self.candidates(term, label, weak=weak))
         return self._memo[memo_key]
 
     def _decide(self, term: str, found: list) -> dict:
@@ -750,6 +761,23 @@ class ConceptMapper:
         """Map items in place. Unresolved items end as concept_mapping_provenance 'unmapped'."""
         pending = [it for it in items if it.get(surface_key)
                    and not (only_unmapped and it.get("concept_mapping_provenance") == "tool")]
+        # curated overrides first (concept_mapping.json curated_mappings): terms every
+        # ontology file gets wrong the same way, e.g. NCBITaxon files "mice" under the
+        # genus Mus. Label-scoped, user-editable, recorded as mapping_source "curated".
+        curated = {k.lower(): v for k, v in _clean(self.cfg.get("curated_mappings")).items()}
+        if curated:
+            still = []
+            for it in pending:
+                hit = curated.get(f"{_q(it, surface_key).strip().lower()}|{(it.get('label') or '').lower()}") \
+                    or curated.get(_q(it, surface_key).strip().lower())
+                if isinstance(hit, dict) and hit.get("ontology_id"):
+                    self._apply(it, {**hit, "concept_mapping_provenance": "tool",
+                                     "alignment_method": "curated_mapping", "mapping_source": "curated",
+                                     "match_tier": hit.get("match_tier", "exactMatch")})
+                    self.counts["curated"] += 1
+                else:
+                    still.append(it)
+            pending = still
         for source in self.sources:
             if not pending:
                 break
@@ -806,6 +834,8 @@ class ConceptMapper:
                 by_term = dict(zip(uniq, results))
                 for it in group:
                     m = by_term.get(_q(it, surface_key)) or {}
+                    if m.get("remote_error"):
+                        it["mapping_remote_error"] = f"{source}: {m['remote_error']}"
                     if m.get("concept_mapping_provenance") == "tool" and m.get("ontology_id"):
                         self._apply(it, {**m, "alignment_method": "direct_tool_call",
                                          "mapping_source": source})
@@ -813,13 +843,25 @@ class ConceptMapper:
                     else:
                         still.append(it)
             pending = still
+        if pending and self.trusted and self.trusted.fallback_on and self.trusted.available():
+            still = []
+            for it in pending:  # last resort: a weaker synonym, honestly tiered (never exactMatch)
+                m = self.trusted.lookup(_q(it, surface_key), it.get("label"), weak=True)
+                if m.get("concept_mapping_provenance") == "tool":
+                    self._apply(it, m)
+                    self.counts["trusted_weak"] += 1
+                else:
+                    still.append(it)
+            pending = still
         for it in pending:
             for f in ("ontology_id", "ontology_label", "ontology"):
                 it[f] = None
             it["concept_mapping_provenance"] = "unmapped"
             # the truthful reason for THIS run, replacing any stale one
             # (e.g. a pre-mapping "validation_failed" stamp)
-            it["alignment_method"] = "no_match"
+            # an unreachable source is not evidence of absence: say so, so a later
+            # `batch retry --from-stage map` can fill it in
+            it["alignment_method"] = "remote_error" if it.get("mapping_remote_error") else "no_match"
             it["mapping_sources_tried"] = list(self.sources)
             self.counts["unmapped"] += 1
 
@@ -915,10 +957,14 @@ def abbreviation_table(texts) -> dict[str, str]:
     return {sf: next(iter(lfs)) for sf, lfs in found.items() if len({x.lower() for x in lfs}) == 1}
 
 
-def map_result(result: dict, mapper: ConceptMapper, *, only_unmapped: bool = False) -> dict:
+def map_result(result: dict, mapper: ConceptMapper, *, only_unmapped: bool = False,
+               texts: Optional[list] = None) -> dict:
+    """`texts`: the source text, when available, so abbreviations defined in a
+    sentence no extracted item carries are still found."""
     started = _utc_now()
     items = [it for key in ("entities", "key_terms") for it in result.get(key) or [] if isinstance(it, dict)]
-    abbrev = abbreviation_table(dict.fromkeys(it.get("sentence") for it in items if it.get("sentence")))
+    abbrev = abbreviation_table(list(texts or []) +
+                                list(dict.fromkeys(it.get("sentence") for it in items if it.get("sentence"))))
     for it in items:
         surf = (it.get("entity") or it.get("term") or "").strip()
         base = surf[:-1] if surf.endswith("s") and surf[:-1] in abbrev else surf

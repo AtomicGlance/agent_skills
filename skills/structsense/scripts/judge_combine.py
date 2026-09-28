@@ -224,7 +224,15 @@ def combine(result: dict, reviews: dict[str, dict], cfg: dict,
                 report["fixes_applied"].append({"id": gid, "field": "normalized_key",
                                                 "from": entry.get("normalized_key"), "to": new_key,
                                                 "licensed_by": "kg-keys", "applied_by": "script"})
-                _rekey(plan, entry.get("normalized_key"), new_key)
+                old_key = entry.get("normalized_key")
+                holders = [e for e in (plan.get("entities") or {}).values()
+                           if isinstance(e, dict) and e.get("normalized_key") == old_key]
+                if len(holders) > 1:
+                    # a key shared by several ids: the judge spoke about THIS id only.
+                    # Move it alone (a split); the others keep the key and its edges.
+                    entry["normalized_key"] = new_key
+                else:
+                    _rekey(plan, old_key, new_key)
                 _mark_fix(rev_list, "kg-keys")
             elif keys["verdict"] == "fail":
                 report["needs_review"].append({"id": gid, "conflict": "kg-keys fail without a suggestion",

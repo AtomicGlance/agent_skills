@@ -418,7 +418,7 @@ def map_and_normalize(job: Job, result: dict, text: str, n_chunks: int) -> dict:
         raise RuntimeError("concept mapping is mandatory and tool-only (rule 15) and no source in "
                            "concept_mapping.json is usable: run `python -m scripts.concept_mapping index` "
                            "(trusted ontologies, offline), start the local mapper, or set BIOPORTAL_API_KEY")
-    map_result(result, cm)
+    map_result(result, cm, texts=[text])
     normalize(result, llm_model=job.model, input_path=str(job.input), input_text_chars=len(text),
               chunk_size_chars=int(job.settings.get("chunk_chars") or 12000), chunk_count=n_chunks)
     return result
@@ -867,6 +867,15 @@ def cmd_retry(args) -> int:
         job = Job(m, manifest, next(p for p in m["papers"] if p["stem"] == stem), v)
         if args.from_stage in ("all", "extract"):
             shutil.rmtree(job.W, ignore_errors=True)
+        elif args.from_stage == "map":
+            # re-expand + re-map + re-judge from the kept extraction; kg_plan.json stays
+            if not job.f("extract").is_dir():
+                raise SystemExit(f"{k}: extraction parts were cleaned up (run without --keep-json); "
+                                 f"use --from-stage extract")
+            shutil.rmtree(job.f("judge"), ignore_errors=True)
+            for n in ("mapped.json", "kg_plan.final.json", "kg_plan_input.json", f"{stem}_final.json"):
+                with contextlib.suppress(FileNotFoundError):
+                    job.f(n).unlink()
         elif args.from_stage == "judge":
             shutil.rmtree(job.f("judge"), ignore_errors=True)
         elif args.from_stage == "kg_plan":
@@ -921,7 +930,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     r.add_argument("stem")
     r.add_argument("--manifest", required=True)
     r.add_argument("--variant", default=None)
-    r.add_argument("--from-stage", choices=["all", "extract", "kg_plan", "judge", "ttl"], default="ttl")
+    r.add_argument("--from-stage", choices=["all", "extract", "map", "kg_plan", "judge", "ttl"], default="ttl",
+                   help="ttl: re-render from kept JSON; map: re-map and re-judge from the kept extraction; "
+                        "kg_plan / judge: redo from there; extract/all: from scratch")
     r.set_defaults(fn=cmd_retry)
     args = ap.parse_args(argv)
     return args.fn(args)
