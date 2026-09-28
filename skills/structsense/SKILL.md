@@ -12,6 +12,11 @@ license: Apache-2.0
 
 # StructSense Skills — structured information extraction
 
+For querying exported graphs or checking competency questions, use
+[cqs/named_entity_ontology_CQs.md](cqs/named_entity_ontology_CQs.md) and
+`python cqs/run_cqs.py /path/to/output --report cq-results.json`. The runner
+distinguishes query errors, empty answers and absent profile-specific records.
+
 ## Entity-extraction contract
 
 Use this contract for unstructured notes, messages, transcripts, web pages,

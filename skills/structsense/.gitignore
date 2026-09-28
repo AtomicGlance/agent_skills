@@ -1,5 +1,7 @@
 trusted_ontologes/lexicon/
 .ols_cache.json
-# competency questions + ontology-gap notes: ontology-repository material, not part of the skill
-cqs/
+# Generated query-run artifacts; maintained queries and tests are versioned.
+cqs/__pycache__/
+cqs/*.json
+cqs/*.log
 test.md
