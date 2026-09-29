@@ -958,3 +958,188 @@ SELECT DISTINCT ?cell ?marker ?pub ?doi ?evidence ?negated ?modality ?context WH
  OPTIONAL { ?assertion ner:assertionContext ?context }
 } ORDER BY ?cell ?marker
 ```
+
+## L. How papers name and characterize cells
+
+**CQ58 — How does each paper name each cell type, how is it classified, which ontology term is it mapped to, and in which species does that paper place it?**
+```sparql
+PREFIX ner: <https://brainkb.org/ner/>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+PREFIX prov: <http://www.w3.org/ns/prov#>
+PREFIX obo: <http://purl.obolibrary.org/obo/>
+SELECT ?cell (SAMPLE(?cellLabel) AS ?label)
+       (GROUP_CONCAT(DISTINCT ?nerClass; separator=" | ") AS ?nerClasses)
+       ?doi ?title
+       (GROUP_CONCAT(DISTINCT ?name; separator=" | ") AS ?namesInPaper)
+       (COUNT(DISTINCT ?m) AS ?mentions)
+       (GROUP_CONCAT(DISTINCT ?mapping; separator=" ; ") AS ?ontologyMappings)
+       (GROUP_CONCAT(DISTINCT ?species; separator=" ; ") AS ?speciesInPaper)
+WHERE {
+  ?e a ?t ; ner:normalizedEntityKey ?cell ; ner:normalizedEntityLabel ?cellLabel ; ner:hasMention ?m .
+  FILTER (?t IN (ner:CellType, ner:CellSubtype, ner:NeuralCellType, ner:Neuron, ner:Interneuron,
+                 ner:ExcitatoryNeuron, ner:InhibitoryNeuron, ner:ProjectionNeuron, ner:MotorNeuron,
+                 ner:SensoryNeuron, ner:GlialCell, ner:Astrocyte, ner:Microglia, ner:Oligodendrocyte,
+                 ner:EpendymalCell, ner:NeuralStemCell))
+  BIND (CONCAT("ner:", STRAFTER(STR(?t), "https://brainkb.org/ner/")) AS ?nerClass)
+  ?m ner:surfaceForm ?sf ; ner:partOfDocumentVersion/ner:versionOfDocument ?pub .
+  BIND (REPLACE(STR(?sf), "\\s+", " ") AS ?name)
+  OPTIONAL { ?pub ner:doi ?doi }
+  OPTIONAL { ?pub ner:title ?title }
+  OPTIONAL {
+    ?e ner:resolvedToConcept ?c .
+    ?c ner:conceptIRI ?iri ; ner:conceptIdentifier ?cid .
+    OPTIONAL { ?c ner:preferredLabel ?plabel }
+    ?e ?tier ?x .
+    FILTER (?tier IN (skos:exactMatch, skos:closeMatch, skos:broadMatch, skos:narrowMatch, skos:relatedMatch)
+            && STR(?x) = STR(?iri))
+    BIND (CONCAT(?cid, ' "', COALESCE(?plabel, ""), '" [', STRAFTER(STR(?tier), "#"), "]",
+                 IF(STRSTARTS(STR(?iri), "https://brainkb.org/concept/"), " (BrainKB default, no external term)", ""))
+          AS ?mapping)
+  }
+  OPTIONAL {                       # species THIS paper states for the cell (in_taxon)
+    ?sa a ner:RelationAssertion ; ner:assertionSubject ?e ; ner:assertionPredicate obo:RO_0002162 ;
+        ner:assertionObject ?sp ; ner:assertionNegated false ; prov:hadPrimarySource ?pub .
+    ?sp ner:normalizedEntityKey ?spKey .
+    OPTIONAL {
+      ?sp ner:resolvedToConcept ?spc . ?spc ner:conceptIdentifier ?spId .
+      FILTER (STRSTARTS(?spId, "NCBITaxon:"))
+      OPTIONAL { ?spc ner:preferredLabel ?spName }
+    }
+    BIND (IF(BOUND(?spId), CONCAT(COALESCE(?spName, ?spKey), " (", ?spId, ")"), ?spKey) AS ?species)
+  }
+}
+GROUP BY ?cell ?doi ?title
+ORDER BY ?cell ?doi
+```
+
+**CQ59 — Which cell types are named by more than one paper, and what does each paper call them?**
+```sparql
+PREFIX ner: <https://brainkb.org/ner/>
+SELECT ?cell ?doi (GROUP_CONCAT(DISTINCT ?name; separator=" | ") AS ?namesInPaper) ?paperCount
+WHERE {
+  {
+    SELECT ?e (COUNT(DISTINCT ?p) AS ?paperCount) WHERE {
+      ?e a ?t ; ner:hasMention/ner:partOfDocumentVersion/ner:versionOfDocument ?p .
+      FILTER (?t IN (ner:CellType, ner:CellSubtype, ner:NeuralCellType, ner:Neuron, ner:Interneuron,
+                     ner:ExcitatoryNeuron, ner:InhibitoryNeuron, ner:ProjectionNeuron, ner:MotorNeuron,
+                     ner:SensoryNeuron, ner:GlialCell, ner:Astrocyte, ner:Microglia, ner:Oligodendrocyte,
+                     ner:EpendymalCell, ner:NeuralStemCell))
+    } GROUP BY ?e HAVING (COUNT(DISTINCT ?p) > 1)
+  }
+  ?e ner:normalizedEntityKey ?cell ; ner:hasMention ?m .
+  ?m ner:surfaceForm ?sf ; ner:partOfDocumentVersion/ner:versionOfDocument ?pub .
+  BIND (REPLACE(STR(?sf), "\\s+", " ") AS ?name)
+  OPTIONAL { ?pub ner:doi ?doi }
+}
+GROUP BY ?cell ?doi ?paperCount
+ORDER BY DESC(?paperCount) ?cell ?doi
+```
+
+**CQ60 — Do differently named cells in different papers mean the same thing (same ontology concept)?**
+```sparql
+PREFIX ner: <https://brainkb.org/ner/>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+SELECT ?conceptId ?conceptLabel
+       (GROUP_CONCAT(DISTINCT CONCAT(?cell, " [", STRAFTER(STR(?tier), "#"), "]"); separator=" ; ") AS ?entitiesWithTier)
+       (GROUP_CONCAT(DISTINCT ?name; separator=" | ") AS ?namesUsed)
+       (COUNT(DISTINCT ?pub) AS ?papers)
+WHERE {
+  ?e a ?t ; ner:normalizedEntityKey ?cell ; ner:resolvedToConcept ?c ; ner:hasMention ?m .
+  FILTER (?t IN (ner:CellType, ner:CellSubtype, ner:NeuralCellType, ner:Neuron, ner:Interneuron,
+                 ner:ExcitatoryNeuron, ner:InhibitoryNeuron, ner:ProjectionNeuron, ner:MotorNeuron,
+                 ner:SensoryNeuron, ner:GlialCell, ner:Astrocyte, ner:Microglia, ner:Oligodendrocyte,
+                 ner:EpendymalCell, ner:NeuralStemCell))
+  ?c ner:conceptIRI ?iri ; ner:conceptIdentifier ?conceptId .
+  OPTIONAL { ?c ner:preferredLabel ?conceptLabel }
+  FILTER (!STRSTARTS(STR(?iri), "https://brainkb.org/concept/"))   # external terms only
+  ?e ?tier ?x . FILTER (?tier IN (skos:exactMatch, skos:closeMatch, skos:broadMatch, skos:narrowMatch, skos:relatedMatch)
+                        && STR(?x) = STR(?iri))
+  ?m ner:surfaceForm ?sf ; ner:partOfDocumentVersion/ner:versionOfDocument ?pub .
+  BIND (REPLACE(STR(?sf), "\\s+", " ") AS ?name)
+}
+GROUP BY ?conceptId ?conceptLabel
+HAVING (COUNT(DISTINCT ?pub) > 1)
+ORDER BY DESC(?papers)
+```
+
+**CQ61 — How does each paper characterize a cell (markers, regions, layers, species, phenotypes), with its evidence?**
+```sparql
+PREFIX ner: <https://brainkb.org/ner/>
+PREFIX prov: <http://www.w3.org/ns/prov#>
+SELECT ?cell ?doi ?predicate ?object ?negated ?evidence
+WHERE {
+  ?a a ner:RelationAssertion ; ner:assertionSubject ?e ; ner:assertionPredicate ?pred ;
+     ner:assertionObject ?o ; ner:assertionNegated ?negated ; prov:hadPrimarySource ?pub .
+  OPTIONAL { ?a ner:evidenceText ?ev }
+  ?e a ?t ; ner:normalizedEntityKey ?cell .
+  FILTER (?t IN (ner:CellType, ner:CellSubtype, ner:NeuralCellType, ner:Neuron, ner:Interneuron,
+                 ner:ExcitatoryNeuron, ner:InhibitoryNeuron, ner:ProjectionNeuron, ner:MotorNeuron,
+                 ner:SensoryNeuron, ner:GlialCell, ner:Astrocyte, ner:Microglia, ner:Oligodendrocyte,
+                 ner:EpendymalCell, ner:NeuralStemCell))
+  ?o ner:normalizedEntityKey ?object .
+  BIND (IF(?pred = <http://purl.obolibrary.org/obo/RO_0002292>, "expresses",
+        IF(?pred = <http://purl.obolibrary.org/obo/RO_0001025>, "located_in",
+        IF(?pred = <http://purl.obolibrary.org/obo/RO_0002162>, "in_taxon",
+        IF(?pred = <http://purl.obolibrary.org/obo/RO_0002200>, "has_phenotype", STR(?pred))))) AS ?predicate)
+  BIND (REPLACE(STR(?ev), "\\s+", " ") AS ?evidence)
+  OPTIONAL { ?pub ner:doi ?doi }
+}
+ORDER BY ?cell ?doi ?predicate
+```
+
+**CQ62 — Where do papers agree or disagree about the same cell (each characteristic, how many papers assert it, how many negate it)?**
+```sparql
+PREFIX ner: <https://brainkb.org/ner/>
+PREFIX prov: <http://www.w3.org/ns/prov#>
+SELECT ?cell ?predicate ?object
+       (COUNT(DISTINCT IF(?negated = false, ?pub, ?none)) AS ?papersAsserting)
+       (COUNT(DISTINCT IF(?negated = true, ?pub, ?none)) AS ?papersNegating)
+       ?papersNamingCell
+WHERE {
+  {
+    SELECT ?e (COUNT(DISTINCT ?p) AS ?papersNamingCell) WHERE {
+      ?e ner:hasMention/ner:partOfDocumentVersion/ner:versionOfDocument ?p .
+    } GROUP BY ?e HAVING (COUNT(DISTINCT ?p) > 1)
+  }
+  ?a a ner:RelationAssertion ; ner:assertionSubject ?e ; ner:assertionPredicate ?pred ;
+     ner:assertionObject ?o ; ner:assertionNegated ?negated ; prov:hadPrimarySource ?pub .
+  ?e a ?t ; ner:normalizedEntityKey ?cell .
+  FILTER (?t IN (ner:CellType, ner:CellSubtype, ner:NeuralCellType, ner:Neuron, ner:Interneuron,
+                 ner:ExcitatoryNeuron, ner:InhibitoryNeuron, ner:ProjectionNeuron, ner:MotorNeuron,
+                 ner:SensoryNeuron, ner:GlialCell, ner:Astrocyte, ner:Microglia, ner:Oligodendrocyte,
+                 ner:EpendymalCell, ner:NeuralStemCell))
+  ?o ner:normalizedEntityKey ?object .
+  BIND (IF(CONTAINS(STR(?pred), "/obo/"), STRAFTER(STR(?pred), "/obo/"), REPLACE(STR(?pred), "^.*[/#]", "")) AS ?predicate)
+}
+GROUP BY ?cell ?predicate ?object ?papersNamingCell
+ORDER BY ?cell DESC(?papersAsserting)
+```
+
+**CQ63 — Candidate same-meaning cells: differently keyed cells in different papers that share characteristics (markers, region, layer) — do they mean the same?**
+```sparql
+PREFIX ner: <https://brainkb.org/ner/>
+PREFIX prov: <http://www.w3.org/ns/prov#>
+SELECT ?cellA ?cellB (GROUP_CONCAT(DISTINCT ?shared; separator=" | ") AS ?sharedCharacteristics)
+       (COUNT(DISTINCT ?shared) AS ?nShared)
+WHERE {
+  ?a1 a ner:RelationAssertion ; ner:assertionSubject ?e1 ; ner:assertionPredicate ?pred ;
+      ner:assertionObject ?o ; ner:assertionNegated false ; prov:hadPrimarySource ?p1 .
+  ?a2 a ner:RelationAssertion ; ner:assertionSubject ?e2 ; ner:assertionPredicate ?pred ;
+      ner:assertionObject ?o ; ner:assertionNegated false ; prov:hadPrimarySource ?p2 .
+  FILTER (?e1 != ?e2 && ?p1 != ?p2 && STR(?e1) < STR(?e2))
+  FILTER (?pred != <http://purl.obolibrary.org/obo/RO_0002162>)   # sharing a species says little
+  ?e1 a ?t1 ; ner:normalizedEntityKey ?cellA .
+  ?e2 a ?t2 ; ner:normalizedEntityKey ?cellB .
+  FILTER (?t1 IN (ner:CellType, ner:CellSubtype, ner:Neuron, ner:Interneuron, ner:ExcitatoryNeuron,
+                  ner:InhibitoryNeuron, ner:ProjectionNeuron, ner:GlialCell, ner:Astrocyte, ner:Microglia,
+                  ner:Oligodendrocyte, ner:NeuralStemCell))
+  FILTER (?t2 IN (ner:CellType, ner:CellSubtype, ner:Neuron, ner:Interneuron, ner:ExcitatoryNeuron,
+                  ner:InhibitoryNeuron, ner:ProjectionNeuron, ner:GlialCell, ner:Astrocyte, ner:Microglia,
+                  ner:Oligodendrocyte, ner:NeuralStemCell))
+  ?o ner:normalizedEntityKey ?obj .
+  BIND (CONCAT(IF(CONTAINS(STR(?pred), "/obo/"), STRAFTER(STR(?pred), "/obo/"), REPLACE(STR(?pred), "^.*[/#]", "")), " ", ?obj) AS ?shared)
+}
+GROUP BY ?cellA ?cellB
+HAVING (COUNT(DISTINCT ?shared) >= 2)
+ORDER BY DESC(?nShared)
+```

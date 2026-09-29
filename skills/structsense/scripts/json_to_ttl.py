@@ -333,6 +333,42 @@ def rejoin_wrapped(key: str, grp: dict) -> str:
     return "_".join(out)
 
 
+def is_non_entity(surface: str, label: Optional[str], cfg: dict) -> bool:
+    """A span that names no referent (ttl_config.json non_entity_filter): a generic
+    category noun, bare or led by a count/quantifier, optionally with generic
+    adjectives in between. "5,000 replicable distinguishable cell types" and "these
+    cells" -> True; "15 HY Gnrh1 Glut", "PV interneurons", "neurons" -> False."""
+    if not cfg or (label or "") not in set(cfg.get("labels") or []):
+        return False
+    s = " ".join(reading_form(surface).lower().split()).strip(" .,;:()")
+    heads = set(cfg.get("generic_heads") or [])
+    if s in heads:
+        return True
+    lead = re.compile(cfg.get("count_or_quantifier") or r"$^", re.I)
+    m = lead.match(s)
+    if not m:
+        return False
+    rest = s[m.end():].split()
+    adj = set(cfg.get("adjectives_before_head") or [])
+    while rest and rest[0] in adj:
+        rest = rest[1:]
+    rest = " ".join(rest)
+    return not rest or rest in heads or rest in set(cfg.get("vague_heads_after_quantifier") or [])
+
+
+def drop_non_entities(result: dict, cfg: dict) -> tuple[dict, int]:
+    if not cfg:
+        return result, 0
+    out = dict(result)
+    kept = [it for it in result.get("entities") or []
+            if not is_non_entity(str(it.get("entity") or ""), it.get("label"), cfg)]
+    dropped = len(result.get("entities") or []) - len(kept)
+    if dropped:
+        out["entities"] = kept
+        out.pop("entities_grouped", None)  # rebuilt from the kept raw mentions
+    return out, dropped
+
+
 def extraction_variant(result: dict, explicit: Optional[str] = None) -> str:
     """Which extraction of the paper this is: 'ner:neuroscience', 'ner:cns-cells', ...
     Explicit > run_metadata.variant > task_type + ner_domain (run_metadata or top level)."""
@@ -2039,6 +2075,7 @@ def result_to_ttl(result: dict, *, kg_plan: Optional[dict] = None,
         result = {**result, "source_metadata": {"source_path": str(Path(source_path).resolve()),
                                                 **(result.get("source_metadata") or {})}}
     cfg = TtlConfig(ttl_config)
+    result, n_dropped = drop_non_entities(result, cfg.raw.get("non_entity_filter") or {})
     declared, onto_version = load_ontology_info(ontology)
     syn = load_json(synonyms, {}) or {}
     _INVARIANT_PLURALS.clear()
@@ -2056,6 +2093,8 @@ def result_to_ttl(result: dict, *, kg_plan: Optional[dict] = None,
         checked_date=date, source_checksum=checksum, media_type=media_type, cfg=cfg, variant=variant,
         source_text=load_source_text(source_path))
     graph = builder.build()
+    if n_dropped:
+        builder.counts["non_entity_mentions_dropped"] = n_dropped
     report = {"paper_slug": slug, "namespace": str(builder.EX), "profile": profile, "variant": builder.variant,
               "triples": len(graph), "counts": dict(builder.counts),
               "warnings": builder.warnings}

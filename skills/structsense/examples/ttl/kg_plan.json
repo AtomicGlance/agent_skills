@@ -190,13 +190,13 @@
    "normalized_key": "excitatory_neuron_pdp",
    "normalized_label": "excitatory (E) neuron",
    "class": "ExcitatoryNeuron",
-   "broader_key": "neuron",
    "relations": [
     {
      "predicate": "located_in",
      "target_key": "pdp_posterior_dorsal_telencephalon"
     }
-   ]
+   ],
+   "broader_key": "neuron"
   },
   "excitatory pDp neurons|CellType": {
    "normalized_key": "excitatory_neuron_pdp",
@@ -242,13 +242,13 @@
    "normalized_key": "ob_inhibitory_interneuron",
    "normalized_label": "olfactory bulb superficial inhibitory interneuron",
    "class": "Interneuron",
-   "broader_key": "inhibitory_neuron_pdp",
    "relations": [
     {
      "predicate": "located_in",
      "target_key": "olfactory_bulb"
     }
-   ]
+   ],
+   "broader_key": "inhibitory_neuron_pdp"
   },
   "inhibitory neurons|CellType": {
    "normalized_key": "inhibitory_neuron_pdp",
@@ -319,11 +319,11 @@
    "normalized_key": "neural_manifold",
    "normalized_label": "neural manifold (activity subspace / point-cloud of population vectors)",
    "class": "NeuroscienceEntity",
-   "derived_from_keys": [
-    "odor_evoked_population_activity"
-   ],
    "related_keys": [
     "attractor_dynamics"
+   ],
+   "derived_from_keys": [
+    "odor_evoked_population_activity"
    ]
   },
   "neurons|CellType": {
@@ -480,14 +480,14 @@
    "normalized_key": "pdp_posterior_dorsal_telencephalon",
    "normalized_label": "posterior zone of dorsal telencephalon (pDp/Dp)",
    "class": "BrainRegion",
-   "see_also_keys": [
-    "piriform_cortex"
-   ],
    "relations": [
     {
      "predicate": "part_of",
      "target_key": "telencephalon"
     }
+   ],
+   "see_also_keys": [
+    "piriform_cortex"
    ]
   },
   "Dp|BrainRegion": {

@@ -111,6 +111,16 @@ LABEL TAXONOMY (use these exactly; do NOT invent others)
 == Misc ==
 - Other              Clearly relevant to CNS cell description but no label fits.
 
+NOT ENTITIES (never emit these, whatever the label)
+- A count, quantity or reference instead of a referent: "5,000 replicable
+  distinguishable cell types", "63 cell types", "these cells", "multiple neurons",
+  "diverse cell populations", "other types of interneurons".
+- A bare category noun: "cell types", "cells", "cell classes", "neuron types",
+  "subtypes", "populations". (A NAMED class stays: "15 HY Gnrh1 Glut" and
+  "33 Vascular" are atlas taxonomy names; "Pvalb neuron subtypes" names Pvalb cells.)
+- For such a phrase, extract the specific entity inside it if there is one
+  ("six Pvalb neuron subtypes" -> "Pvalb neuron subtypes"), never the count.
+
 OUTPUT
 Strict JSON. No prose. No markdown fences. No comments inside JSON.
 

@@ -25,6 +25,10 @@ For each item (id = "<entity>|<label>"):
   sentence it cites is not in the source.
 
 Confidence = how certain YOU are of the verdict, not the item's quality.
+- fail — the span names no referent: a count or quantity ("5,000 replicable
+  distinguishable cell types", "63 cell types"), a reference ("these cells",
+  "multiple neurons") or a bare category noun ("cell types", "cells", "neuron
+  types"). A named class ("15 HY Gnrh1 Glut", "Pvalb neuron subtypes") passes.
 No suggestions: a grounding failure is not fixable, it is a drop.
 
 OUTPUT strict JSON only, no prose, no markdown fences:
