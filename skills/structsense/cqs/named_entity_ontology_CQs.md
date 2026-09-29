@@ -153,6 +153,7 @@ SELECT DISTINCT ?e ?key ?tier ?obo WHERE {
 } ORDER BY ?key
 ```
 
+empty remove
 **CQ9 — How was a mapping decided: candidates, ranks, scores, the decision,
 its status, confidence, and the method used?**
 ```sparql
@@ -258,6 +259,8 @@ SELECT ?causeKey ?effectKey ?measure ?value ?p ?n WHERE {
 }
 ```
 
+
+--not used
 **CQ15 — Which cross-source claims have the same entity pair and opposite negation (candidates for review, not proof of disagreement)?**
 ```sparql
 PREFIX prov: <http://www.w3.org/ns/prov#>
@@ -272,13 +275,14 @@ SELECT DISTINCT ?r1 ?r2 ?pub1 ?pub2 ?causeKey ?effectKey WHERE {
 }
 ```
 
+not used
 **CQ16 — Which participants are recorded for drug entities (RO:0000057; not a pharmacological targeting predicate)?**
 ```sparql
 PREFIX ner: <https://brainkb.org/ner/>
 PREFIX obo: <http://purl.obolibrary.org/obo/>
 SELECT ?drug ?target WHERE {
   ?d a ner:Drug ; ner:normalizedEntityKey ?drug ;
-     obo:RO_0000057/ner:normalizedEntityKey ?target .
+     obo:CHEBI_92386/ner:normalizedEntityKey ?target .
 }
 ```
 
