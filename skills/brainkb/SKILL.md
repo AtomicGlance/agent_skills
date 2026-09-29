@@ -6,7 +6,12 @@ description: >-
   ingest jobs, read/search the knowledge graphs, and query W3C PROV-O
   provenance (including triple-level deltas). Use whenever the user asks to
   ingest/upload triples or RDF to BrainKB, create or share a workspace/space  (private/public), search or read BrainKB graphs, check an ingest job's status, ingest a completed SynthScholar/PRISMA literature review into a space, or ask "who/when/what changed" (provenance) about a graph.
-  
+  Also use it to answer questions about extracted named entities through canned,
+  parameterised queries (brainkb_qa_list / brainkb_qa_run): which papers mention
+  an entity, its surface forms, ontology mappings and gaps, cell–region and
+  cell–marker assertions, phenotypes, causal claims and effect sizes, and
+  extraction/judge provenance. Covers the production MCP (mcp.brainkb.org) and
+  the sandbox MCP (mcp.sandbox.brainkb.org).
 ---
 
 # BrainKB Skills
@@ -27,17 +32,35 @@ There are two ways to reach BrainKB, and the right one depends on where this cod
 runs:
 
 - **Hosted remote — `https://mcp.brainkb.org/mcp` (live).** Works from anywhere,
-  including cloud/sandbox sessions. Register it once:
+  including cloud-hosted agent sessions. Register it once:
   ```bash
   claude mcp add --scope user --transport http brainkb https://mcp.brainkb.org/mcp
   ```
   The operator has already configured the backend, so **do not pass `base_url`**
   to any tool here — see the allowlist note under *Credentials & safety*.
   Authenticate per caller (PAT via `Authorization: Bearer`, or the login tools).
+- **Sandbox remote — `https://mcp.sandbox.brainkb.org/mcp` (live).** The same MCP
+  server in front of a separate sandbox deployment, for testing ingests, new
+  tools and QA queries without touching production data. Register it under its own
+  name so both can be available at once:
+  ```bash
+  claude mcp add --scope user --transport http brainkb-sandbox https://mcp.sandbox.brainkb.org/mcp
+  ```
+  Everything in this skill applies unchanged: omit `base_url`, authenticate per
+  caller, and use `https://mcp.sandbox.brainkb.org/upload` for file uploads.
+  Treat it as a separate deployment. Spaces, graphs, jobs and provenance there are
+  not the production ones, and a PAT minted on one deployment should not be
+  assumed to work on the other; check `brainkb_whoami()` on each.
 - **Local stdio MCP → `http://localhost:8010`.** Only works when the caller runs on
   the **same machine** as the BrainKB Docker stack, through the local MCP process.
-  A cloud/sandbox session **cannot** reach a `localhost` deployment on the user's
+  A cloud-hosted session **cannot** reach a `localhost` deployment on the user's
   laptop and no base URL will fix that — use the hosted remote instead.
+
+**Which deployment?** Use production unless the user says sandbox, test or staging,
+or is trying out something new (a fresh ingest, a new QA query). When both servers
+are registered, say which one you used, especially before any write. An ingest into
+the wrong deployment is still permanent. If the user's request is ambiguous about
+where to write, ask.
 
 Two notes on diagnosing failures:
 
@@ -45,14 +68,16 @@ Two notes on diagnosing failures:
   reach the deployment — don't keep guessing URLs. For the local path, check the
   MCP is running and the stack is up (`http://localhost:8010/openapi.json` → 200 on
   that machine). Ask the user rather than retrying different hosts.
-- `GET https://mcp.brainkb.org/mcp` in a browser returns **406 "Client must accept
-  text/event-stream"**. That is the endpoint working, not an outage; `/` serves a
-  plain landing page and `/healthz` returns `ok`.
+- `GET https://mcp.brainkb.org/mcp` (or `https://mcp.sandbox.brainkb.org/mcp`) in a
+  browser returns **406 "Client must accept text/event-stream"**. That is the
+  endpoint working, not an outage; `/` serves a plain landing page and `/healthz`
+  returns `ok`.
 
 Do not fall back to curl, a local script, or another MCP server from any session —
 use the hosted remote's MCP tools, or stop and report what is blocking.
 
-**Rate limits apply on the hosted remote** (per caller IP): roughly 8 logins, 40
+**Rate limits apply on the hosted remotes** (per caller IP; assume the sandbox
+matches production): roughly 8 logins, 40
 writes/ingests, 120 reads and 30 admin calls per minute. A limited call returns
 `status_code: 429` with a `detail` naming the bucket — surface it and wait out the
 window. Never retry-loop, and never split one job into many calls to get around it.
@@ -352,6 +377,8 @@ Call `brainkb_login(email, password, base_url?)`. Confirm with `brainkb_whoami()
   )
   print(r.json())
   ```
+  On the sandbox, post to `https://mcp.sandbox.brainkb.org/upload` instead; an upload
+  lands only on the deployment you send it to.
   With `graph` set the server submits the ingest itself and answers `202` at once —
   upload and forget; poll `brainkb_upload_status(upload_id)` until it reports a
   `job_id`. Without it you get a staged `upload_id` for
@@ -585,6 +612,9 @@ review graphs to spaces before backfilling, not after.
   complete answer is `brainkb_list_registered_graphs()` + those four, and saying "I
   can't enumerate the store without SPARQL" is wrong. What SPARQL *is* needed for is
   **triple counts per graph** — there is no counting endpoint.
+- Questions about extracted named entities (mentions, mappings, cell types,
+  markers, phenotypes, causal claims, extraction provenance) → the canned QA tools
+  in §5a, before writing any SPARQL yourself.
 - Arbitrary SPARQL: `brainkb_sparql(query)` — **last resort.** It needs an
   Admin/SuperAdmin role (the `sparql_admin` capability), so for most users it 403s.
   Reach for the purpose-built tool first: "what graphs exist" is
@@ -592,6 +622,95 @@ review graphs to spaces before backfilling, not after.
   this space" is `brainkb_read_space(slug)`; "find X" is `brainkb_search(q)`;
   "what changed" is the delta tools below. Hand-writing SPARQL for a question one
   of those answers is how a 403 gets mistaken for a broken deployment.
+
+### 5a. Named-entity questions (canned QA queries)
+
+The MCP serves prepared, vetted SPARQL for common questions about the
+named-entity graph (`https://www.brainkb.org/named-entity/`, StructSense output in
+the BrainKB Named Entity Ontology), through two generic tools:
+
+- `brainkb_qa_list()` → the category menu. `brainkb_qa_list(category="named_entities")`
+  → every query with its `question`, `notes`, `params` and a working `example`.
+  `brainkb_qa_list(search="marker")` searches ids, questions and notes.
+- `brainkb_qa_run(query_id, params)` → validates and escapes each parameter,
+  fills the template and runs it.
+
+Prefer these over hand-written SPARQL for anything they cover. Their predicates
+match the real vocabulary, and their `notes` say what each column means and what
+an empty result does and does not imply.
+
+**Access.** `brainkb_qa_run` goes through the same SPARQL endpoint as
+`brainkb_sparql`, so it needs the same role (Admin/SuperAdmin, `sparql_admin`) and
+counts against the read rate limit. A 403 is a role problem, not a broken query;
+say so and don't retry with `brainkb_sparql`. `brainkb_qa_list` needs no special
+role.
+
+**Workflow — pick the query, resolve parameters, then run:**
+
+1. `brainkb_qa_list(category="named_entities")`, or `search=` with the user's key
+   words, then choose the query whose `question` and `notes` match. Read the notes;
+   they say when to prefer a neighbouring query.
+2. **Resolve every parameter value with a lookup helper. Never invent one.**
+   | Parameter | Resolve with | Copy |
+   |---|---|---|
+   | entity keys: `entity_key`, `cause_key`, `effect_key`, `cell_key`, `region_key`, `marker_key`, `phenotype_key`, … | `ne_find_entity` `{"name": "<user's words>"}` | `?key` |
+   | `entity_type` (class IRI) | `ne_available_entity_types` | `?type` |
+   | `doi` | `ne_list_sources` `{"search": "<DOI fragment or title word>"}` | `?doi` |
+   | `ontology_acronym` | `ne_ontology_coverage` | `?acronym` |
+   | `node_iri` (entity or ontology-term IRI) | `ne_find_entity` (`?e`), `ne_entity_external_mappings` (`?obo`) | the full IRI |
+   `ne_find_entity` matches keys, labels and verbatim surface forms, so an
+   abbreviation like "PV" is found. If several candidates fit, show them and ask
+   the user which one they mean rather than picking one. Keys are matched exactly, so
+   a guessed key silently returns nothing.
+3. Run it: `brainkb_qa_run("ne_cell_type_region_assertions", {"region_key": "hippocampus"})`.
+
+**Parameter rules.**
+- A parameter with no default is **required**. If its value has to come from the
+  user (e.g. `ne_find_entity`'s `name`), ask; a missing one returns
+  `400 missing required parameter`.
+- Optional filters default to `""`, which means "no filter, return everything".
+  Omit them for a corpus-wide question, but **if the user asked about a specific
+  entity or paper, resolve it and pass it**; don't fall back to the unfiltered query.
+- Values from a fixed list (`tier`: exact/close/broad/narrow/related; `role`:
+  mediator/moderator/confounder; phenotype `level`; `change_kind`; `dimension`) are
+  listed in the query's `notes`. Use one of those values exactly.
+- `limit` caps rows, not entities or papers. A truncated result is not the full
+  answer; say so, or re-run with a narrower filter.
+- Pass only the parameter names the query declares; unknown names are a 400.
+
+**Reading results honestly** (the notes repeat these per query):
+- Entity provenance (`prov:hadPrimarySource`) only says where an entity *occurs*.
+  Only the RelationAssertion queries (`ne_cell_type_region_assertions`,
+  `ne_phenotype_assertions`, `ne_cell_marker_expression_assertions`) say which
+  source *stated* a relationship, with its negation, modality and context. Report
+  a `negated: true` row as a negative finding, never as support.
+- Mapping tiers are relationships, not confidence scores, and only `exact` is an
+  identity claim. Provisional BRAINKB concepts count as unmapped.
+- Recurrence across sources (`ne_causal_pairs_across_sources`) is not independent
+  replication, and a shared entity IRI is not scientific agreement.
+- An empty result means no records matched. Audit queries (classification
+  confidence, judge verdicts, change records, mapping decisions, validation
+  reports) need full-profile exports, and compact exports omit those records.
+
+**Common questions → query id:**
+
+| Question | Query |
+|---|---|
+| Which entities of type X / in paper P? | `ne_entities_of_type`, `ne_source_typed_inventory` |
+| How is it written / where is it mentioned? | `ne_entity_surface_forms`, `ne_mention_source_offsets`, `ne_entity_provenance_walk` |
+| Shared across papers / related papers? | `ne_entities_shared_across_sources`, `ne_sources_by_shared_entities` |
+| What is it connected to? | `ne_entity_neighborhood` (by key), `ne_node_neighborhood` (by IRI, incl. OBO/BKE terms) |
+| Ontology mappings, tiers, coverage, gaps | `ne_entity_external_mappings`, `ne_entities_by_ontology_tier`, `ne_ontology_coverage`, `ne_mapping_tiers_by_ontology`, `ne_entities_without_external_mapping`, `ne_unmapped_entities_by_mentions` |
+| Cells in regions / markers / phenotypes | `ne_cell_type_region_assertions`, `ne_cell_marker_expression_assertions`, `ne_phenotype_assertions`, `ne_phenotypes_by_level` |
+| Anatomy and hierarchy | `ne_anatomical_part_of`, `ne_broader_relationships`, `ne_broader_paths_to_ancestors` |
+| Causal claims, mechanisms, effect sizes | `ne_entity_causal_claims`, `ne_ordered_causal_chains`, `ne_causal_third_variables`, `ne_causal_evidence_basis`, `ne_causal_effect_estimates`, `ne_significant_effect_estimates`, `ne_phenotype_causal_effects` |
+| Trends over time | `ne_entity_first_source_year`, `ne_term_sources_by_year`, `ne_effect_claims_by_source_year` |
+| Who extracted / reviewed / changed it? | `ne_extraction_runs`, `ne_judge_runs`, `ne_mention_review_decisions`, `ne_entity_review_verdicts`, `ne_judge_change_records`, `ne_demoted_mappings` |
+
+This table is a starting point. `brainkb_qa_list` is authoritative, since new
+queries appear there without a skill update. If a query id in this table is
+missing from the list, the deployment predates it: report that rather than
+rewriting the query as raw SPARQL.
 
 **Telling "the tool is missing" from "the tool is disabled".** These look the same
 from a failed call and are not: a tool absent from the server's `tools/list` means the
@@ -888,7 +1007,7 @@ session can't reach the deploy (localhost from a cloud session, or stack down).
 ## Fallback: curl (no MCP)
 
 Only use this when running **on the same machine/network as the deployment**
-(so `localhost:8010` resolves to the real stack). From a cloud/sandbox session,
+(so `localhost:8010` resolves to the real stack). From a cloud-hosted session,
 curl to `localhost` will fail — use the local MCP instead.
 
 Base = the deployment URL (default `http://localhost:8010`).
