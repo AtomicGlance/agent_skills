@@ -625,9 +625,9 @@ review graphs to spaces before backfilling, not after.
 
 ### 5a. Named-entity questions (canned QA queries)
 
-The MCP serves prepared, vetted SPARQL for common questions about the
-named-entity graph (`https://www.brainkb.org/named-entity/`, StructSense output in
-the BrainKB Named Entity Ontology), through two generic tools:
+The MCP serves prepared, vetted SPARQL for common questions about named-entity
+data (StructSense output in the BrainKB Named Entity Ontology), through two
+generic tools:
 
 - `brainkb_qa_list()` → the category menu. `brainkb_qa_list(category="named_entities")`
   → every query with its `question`, `notes`, `params` and a working `example`.
@@ -643,7 +643,25 @@ an empty result does and does not imply.
 `brainkb_sparql`, so it needs the same role (Admin/SuperAdmin, `sparql_admin`) and
 counts against the read rate limit. A 403 is a role problem, not a broken query;
 say so and don't retry with `brainkb_sparql`. `brainkb_qa_list` needs no special
-role.
+role. Because the endpoint is admin SPARQL, it can read private spaces' graphs.
+Only query a space's graph when the user asked about that space, and don't report
+private-space results to someone who isn't a member.
+
+**Which graph.** Every query reads one named graph, set by its optional `graph`
+parameter, which defaults to `https://www.brainkb.org/named-entity/`. NER output
+can also be ingested into a user's own space, so choose the graph before you run
+anything:
+- The user names a space or workspace ("in my lab space", "the hmba data") → take
+  its graph IRI from `brainkb_read_space(slug)` or `brainkb_list_spaces()`.
+- Unsure where the data is → `brainkb_qa_run("ne_named_entity_graphs")` lists
+  every graph holding named entities, with counts. Cross-check it against
+  `brainkb_list_spaces()` to tell the user which space each graph belongs to.
+- Nothing points elsewhere → omit `graph` and use the default.
+Pass the **same** `graph` to the lookup helpers and to the query. A key found
+in one graph may not exist in another. Pass the IRI exactly as listed,
+trailing slash included. For a space with several graphs, run the query once per
+graph and say that you combined the results. Say which graph each answer came
+from.
 
 **Workflow — pick the query, resolve parameters, then run:**
 
@@ -658,11 +676,14 @@ role.
    | `doi` | `ne_list_sources` `{"search": "<DOI fragment or title word>"}` | `?doi` |
    | `ontology_acronym` | `ne_ontology_coverage` | `?acronym` |
    | `node_iri` (entity or ontology-term IRI) | `ne_find_entity` (`?e`), `ne_entity_external_mappings` (`?obo`) | the full IRI |
+   | `graph` (named graph) | `brainkb_read_space` / `brainkb_list_spaces`, `ne_named_entity_graphs` | the graph IRI |
    `ne_find_entity` matches keys, labels and verbatim surface forms, so an
    abbreviation like "PV" is found. If several candidates fit, show them and ask
    the user which one they mean rather than picking one. Keys are matched exactly, so
    a guessed key silently returns nothing.
-3. Run it: `brainkb_qa_run("ne_cell_type_region_assertions", {"region_key": "hippocampus"})`.
+3. Run it: `brainkb_qa_run("ne_cell_type_region_assertions", {"region_key": "hippocampus"})`,
+   or for a space's graph
+   `{"region_key": "hippocampus", "graph": "https://brainkb.org/graph/my-lab/"}`.
 
 **Parameter rules.**
 - A parameter with no default is **required**. If its value has to come from the
