@@ -56,7 +56,8 @@ structsense/
 │   ├── aligned-item.schema.json
 │   ├── judged-item.schema.json
 │   ├── abcd-paper.schema.json             ← ABCD per-paper result (+ rejected[], verification)
-│   └── abcd-synthesis.schema.json         ← cross-paper consensus / divergence / roles
+│   ├── abcd-synthesis.schema.json         ← cross-paper consensus / divergence / roles
+│   └── ait-mapping-columns.json           ← AIT mapping: 7-table CSV column contract
 ├── scripts/                 ← pure-Python runnable helpers
 │   ├── chunking.py
 │   ├── json_repair.py
@@ -95,10 +96,15 @@ structsense/
 │   ├── abcd_extract.py      ← driver: one argument, auto-detected. --prepare/--payload
 │   │                          when you are the model; --llm-model when a framework calls
 │   ├── abcd_synthesize.py   ← cross-paper consensus/divergence + role consistency
-│   └── abcd_export.py       ← JSON + Markdown tables + Turtle (PROV-O) writers
+│   ├── abcd_export.py       ← JSON + Markdown tables + Turtle (PROV-O) writers
+│   ├── ait_taxonomy.py      ← AIT taxonomy catalog: list / rank / show
+│   ├── ait_evidence.py      ← AIT Pass 2a: lexical evidence check + quarantine
+│   ├── ait_tables.py        ← AIT column contract: init / derive / review-sheet / validate
+│   └── ait_gene_diff.py     ← AIT Pass 4: entity cards + marker-gene diff
 ├── data/
-│   └── dictionaries/        ← bundled ABCD/HBCD dictionaries, all 7 releases,
-│                              539,781 variables in 8.6 MB gzipped (self-contained)
+│   ├── dictionaries/        ← bundled ABCD/HBCD dictionaries, all 7 releases,
+│   │                          539,781 variables in 8.6 MB gzipped (self-contained)
+│   └── allen_taxonomies.json ← dated snapshot of the 14 Allen (AIT) cell type taxonomies
 ├── requirements.txt         ← core deps; -llm / -ner / -dev for the optional paths
 └── examples/                ← worked end-to-end examples
     ├── ner-example.md

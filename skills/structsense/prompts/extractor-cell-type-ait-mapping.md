@@ -51,6 +51,12 @@ for every entity type:
 
 ### 1b. Retrieve supplementary and deposited material
 
+If the `allen-taxonomy-pretriage` skill is available, run it first and reuse its record
+rather than re-deriving it: its `scan_species()` split (experimental vs reagent-host vs
+citation-only) seeds `species_role`, its referenced taxonomies seed `sources.csv` and
+the author-statement basis in Pass 3, and its taxonomy shortlist uses the same catalog
+and scoring as `scripts/ait_taxonomy.py`.
+
 Before extracting, check for a taxonomy or cell type table published alongside the paper.
 Look in this order and record what you find in `sources.csv`:
 
@@ -111,6 +117,13 @@ observed, because that bounds how much weight a marker-based mapping can carry:
 **Evidence** — for every extracted entity, capture the verbatim supporting sentence(s)
 together with `chunk_id` and the character offsets. Copy the span exactly: do not fix
 typography, expand abbreviations, normalize whitespace, or join sentences with ellipses.
+Offsets index the one text file the Pass 1a index was built on (main text, captions,
+tables and supplements concatenated); keep that file, because Pass 2 verifies against it.
+When an entity has several evidence sentences, the evidence columns are *aligned*
+multi-values: the n-th element of `evidence_sentence`, `evidence_section`,
+`evidence_chunk_id`, `evidence_char_start`, `evidence_char_end`, `evidence_verified` and
+`evidence_similarity` all describe the same sentence. A literal `|` inside a quoted span
+(a Markdown table row, say) is written `\|`.
 
 ---
 
@@ -119,7 +132,14 @@ typography, expand abbreviations, normalize whitespace, or join sentences with e
 ### 2a. Lexical verification of evidence (mandatory, code-based)
 
 Every evidence sentence must be checked programmatically against the source text. This
-is not an LLM judgement — write and run the check.
+is not an LLM judgement — run the check:
+
+```bash
+python -m scripts.ait_evidence out/ --text paper.txt   # rewrites entities.csv + methods.csv, writes evidence_report.json
+```
+
+It implements the steps below exactly (case-sensitive; `methods.csv` has no offsets, so
+a verbatim hit there is `exact`).
 
 For each evidence row:
 1. Normalize both the quoted span and the source text identically: Unicode NFKC, collapse
@@ -142,6 +162,11 @@ Any entity whose only evidence is `not_found` is **quarantined**: it stays in th
 with `extraction_flag = unverified_evidence` and must not be promoted to a mapping edge
 or written to BrainKB. Report the count of quarantined entities; a non-trivial rate is a
 signal that the extraction step is paraphrasing and the prompt needs tightening.
+
+`fuzzy` evidence may support a mapping edge, but it is flagged: it never appears in
+`review_sheet.csv` (which admits only `exact` and `exact_offset_corrected`), it does not
+count toward evidence integrity, and `run_report.md` reports the number of edges whose
+best evidence is only `fuzzy`, so a curator can audit them first.
 
 ### 2b. Deduplication
 
@@ -185,16 +210,23 @@ match within it using label, marker genes, and hierarchy level.
 
 ### Available AIT taxonomies
 
-| Taxonomy | AIT ID | Species | Brain region |
-|---|---|---|---|
-| Whole Mouse Brain Consensus | AIT33 | Mouse | Whole brain |
-| Cross-Species Basal Ganglia | AIT19.5, AIT11.9, AIT101 | Cross-species | Basal ganglia |
-| Human MTG SMART-Seq | AIT15.3 | Human | Middle temporal gyrus |
-| Comparative LGN | AIT102, AIT103, AIT104 | Human, Mouse, Macaque | Lateral geniculate nucleus |
-| Mammalian Primary Motor Cortex | — | Multi-species | Primary motor cortex |
-| Human Neocortex | AIT105 | Human | Neocortex |
-| Mouse V1 & ALM | AIT2.1.1 | Mouse | Visual cortex, ALM |
-| Mouse Isocortex & Hippocampal Formation | AIT5.1 | Mouse | Isocortex, hippocampus |
+Do not keep a list of taxonomies in this prompt. The list has one maintained home,
+`data/allen_taxonomies.json` (a dated snapshot of the brain-map.org taxonomy index,
+shared with the `allen-taxonomy-pretriage` skill), and is read with code:
+
+```bash
+python -m scripts.ait_taxonomy list
+python -m scripts.ait_taxonomy rank --species human --region "middle temporal gyrus"   # first --species = primary experimental species
+python -m scripts.ait_taxonomy show AIT31
+```
+
+The ranking is a shortlist to adjudicate, not a decision. If no taxonomy in the snapshot
+covers the paper's experimental species and region, record `skos_relation = none` with
+that reason. Do not force the nearest taxonomy: a silent `closeMatch` to the wrong
+taxonomy is worse than a visible failure. Write `ait_id` as the taxonomy's AIT accession
+when the catalog has one, otherwise its CCN, otherwise its `taxonomy_name`; this is the
+`ait_id` that `rank` prints. If the snapshot looks stale (a taxonomy the paper names is
+missing), say so in `run_report.md` instead of inventing an ID.
 
 ### Use SKOS match relations, with `match_confidence` derived from them
 
@@ -209,6 +241,15 @@ Every edge asserts a specific semantic relationship, recorded as a SKOS predicat
 | `skos:narrowMatch` | **the AIT node is narrower than the paper entity** — the paper describes a superset (paper "interneurons" → AIT cluster `Pvalb Vipr2_1`) |
 | `skos:relatedMatch` | associated but neither equivalent nor hierarchically nested (e.g. an activity state, or a population defined by a transgenic line that cuts across types) |
 | `none` | no defensible relation; `ait_node_id` blank and `no_match_reason` required |
+
+**House rule: `exactMatch` is reserved for same-taxonomy identity.** SKOS `exactMatch`
+is transitive, so a chain of them would fuse AIT nodes across taxonomies as the graph
+grows. Use `skos:exactMatch` only when the paper's label *is* a node of the target
+taxonomy. That means the paper annotated its cells against that taxonomy
+(`author_statement`) or a deposited mapping table says so (`supplementary_mapping`), and
+the experimental species is one the taxonomy covers. Everything else is `closeMatch`,
+even when labels agree exactly: cross-taxonomy, cross-species, or the paper's own
+clustering with matching names. `scripts/ait_tables.py validate` enforces this rule.
 
 Direction is the thing people get wrong — read `broadMatch` as "the target is broader".
 When no direct relation holds but an ancestor does, emit the ancestor edge as
@@ -226,7 +267,12 @@ not set it by hand:
 
 The collapse is lossy in exactly the way that matters — `partial` hides whether the paper
 entity was a subset or a superset of the AIT node — so read `skos_relation` when
-interpreting an edge and `match_confidence` only for sorting a review queue.
+interpreting an edge and `match_confidence` only for sorting a review queue. Fill it
+with `python -m scripts.ait_tables derive out/`, which also copies
+`cell_type_name_as_in_paper` and `species_experimental` from `entities.csv`. There is
+deliberately no numeric mapping score: a number the model reports for itself gets read
+as calibrated. Sort the queue by `match_confidence`, `evidence_verified` and the Pass 4
+Jaccard values instead.
 
 Record `basis_for_match` as a pipe-delimited subset of
 `label_exact | label_normalized | marker_genes | brain_region | species | hierarchy_level | author_statement | supplementary_mapping`.
@@ -266,13 +312,32 @@ mapping edge with its SKOS relation, the three gene sets, the assay and panel de
 verified evidence sentence, and the provenance string. Join it to `mappings.csv` on
 `mention_id`.
 
+Build the cards with code once the marker sets are retrieved. Gene symbols are compared
+exactly, so resolve orthologs before this step:
+
+```bash
+python -m scripts.ait_gene_diff out/ --markers markers.json --panels panels.json --namespace MGI
+#   markers.json: {ait_node_id: [genes]}   panels.json: {gene_panel_name or assay_id: [genes]}
+```
+
 ---
 
 ## Standardized output
 
 Emit exactly these seven files, with exactly these column names, in this order. Column
 names are a contract — do not rename, reorder, add, or drop columns; a field with no
-value is left empty, not omitted. Use UTF-8,
+value is left empty, not omitted. The machine-readable contract is
+`schemas/ait-mapping-columns.json` (type, multi-valued flag, vocabulary and required
+flag for all 147 columns). Start from it and finish by checking against it:
+
+```bash
+python -m scripts.ait_tables init out/            # header-only files
+# ... Pass 1 extraction, then Pass 2a: python -m scripts.ait_evidence out/ --text paper.txt
+python -m scripts.ait_tables derive out/          # match_confidence + crosswalk copies
+python -m scripts.ait_gene_diff out/ --markers markers.json --namespace MGI
+python -m scripts.ait_tables review-sheet out/    # the deterministic join
+python -m scripts.ait_tables validate out/        # must exit 0 before anything reaches BrainKB
+``` Use UTF-8,
 comma-separated, quote all fields, `\n` line endings. Empty means not applicable; `NA`
 means looked for and not found — the distinction matters downstream. Multi-valued fields
 are pipe-delimited (`|`) with no surrounding spaces. Booleans are lowercase
@@ -368,9 +433,10 @@ species, and regions:
 
 ### `run_report.md`
 
-Counts per table; entities extracted, verified, quarantined; mappings by SKOS relation;
-unmapped entities with reasons; sources attempted vs retrieved; and every assumption you
-made that a curator should check.
+Counts per table; entities extracted, verified, quarantined (from `evidence_report.json`);
+mappings by SKOS relation; edges whose best evidence is only `fuzzy`; unmapped entities
+with reasons; sources attempted vs retrieved; the `allen_taxonomies.json` snapshot date
+used; the `validate` result; and every assumption you made that a curator should check.
 
 ---
 
@@ -380,8 +446,15 @@ made that a curator should check.
   same label and species, has already been extracted, retrieve the stored record instead
   of re-deriving it, and extend rather than duplicate. Reusing stored BrainKB facts in
   place of re-reading source text is the intended steady state.
+- **AIT taxonomy catalog** — `scripts/ait_taxonomy.py` over `data/allen_taxonomies.json`
+  picks the taxonomy (Pass 3).
 - **AIT taxonomy reader** — look up candidate nodes by label, region, or markers, and
   retrieve the marker gene set needed for the Pass 4 diff.
+- **allen-taxonomy-pretriage** skill, when available — species roles and referenced
+  taxonomies for Pass 1b.
+- **Deterministic stages** — `scripts/ait_evidence.py` (Pass 2a), `scripts/ait_tables.py`
+  (derive / review sheet / validate), `scripts/ait_gene_diff.py` (Pass 4). Run them; do
+  not reproduce their output by hand.
 - **GFF / GeneOrthology tools** — normalize gene symbols and resolve cross-species
   orthologs before any gene-set comparison.
 - **StructSense extraction skills**.

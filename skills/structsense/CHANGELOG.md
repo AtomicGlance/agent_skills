@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.9.0 — Cell types to Allen (AIT) taxonomies, with the trust steps in code
+
+New mode for BrainKB: `prompts/extractor-cell-type-ait-mapping.md` extracts a
+paper's cell types, genes, species, regions and assay metadata and maps them to
+Allen Institute cell type taxonomies. The paper is the node; every mapping is a
+reversible SKOS edge keyed on `mention_id` and `ait_node_id`, so going from a
+taxonomy back to the literature is a query. The prompt describes four passes
+(index + extract → verify → map → entity cards) and seven fixed-schema CSVs.
+The steps that must not be model judgement are scripts:
+
+- **`scripts/ait_evidence.py`** checks every evidence sentence against the source
+  text: identical normalisation on both sides (NFKC, quotes/dashes, soft hyphens,
+  line-break hyphenation, whitespace), then the recorded offsets, then the whole
+  document, then a fuzzy alignment at ≥0.95. An entity with no evidence found is
+  quarantined and can never become an edge. `fuzzy` evidence can still support an
+  edge, but stays out of the review sheet and is reported separately.
+- **`scripts/ait_taxonomy.py` + `data/allen_taxonomies.json`.** The prompt's
+  hardcoded table listed 8 of the 14 taxonomies, which forced a SEA-AD or
+  whole-human-brain paper onto AIT105/AIT15.3 as a confident `closeMatch`. That
+  list now lives in one place: a dated snapshot shared with the
+  `allen-taxonomy-pretriage` skill, ranked the same way.
+- **`scripts/ait_tables.py`** holds the column contract
+  (`schemas/ait-mapping-columns.json`, 147 columns). `derive` fills
+  `match_confidence` from `skos_relation` and copies the crosswalk columns.
+  `review-sheet` builds the curator view as a pure join. `validate` checks headers,
+  types, vocabularies, the crosswalk and the quarantine rule.
+- **House rule: `skos:exactMatch` means same-taxonomy identity only.** The match
+  needs an `author_statement` or `supplementary_mapping` basis and a species the
+  taxonomy covers; everything else is `closeMatch`. `exactMatch` is transitive, so
+  without this rule a chain of edges would fuse AIT nodes across taxonomies.
+- **`scripts/ait_gene_diff.py`** builds the entity cards: shared, paper-only and
+  taxonomy-only marker sets with Jaccard, plus a panel-restricted Jaccard for
+  targeted assays, which cannot report off-panel genes.
+- There is deliberately no numeric mapping score, because a score the model
+  reports for itself gets read as calibrated.
+- `tests/test_structsense_ait.py` covers all four scripts and keeps the schema in
+  sync with the prompt's column lists.
+
 ## 0.8.0 — ABCD: a role belongs to an analysis, and a wave is not a name
 
 Feedback on the first ABCD corpus run was that the right variables came out but
