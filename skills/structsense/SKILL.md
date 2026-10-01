@@ -209,6 +209,7 @@ The files below are intentionally separated so you only load what the current ta
 - `judge.md` — per-item quality judge.
 - `humanfeedback.md` — apply human reviewer edits.
 - `extractor-abcd.md` — ABCD/HBCD extractor: variables (as mentioned), constructs, models, findings with roles/directions, each with a verbatim quote + section/page.
+- `extractor-cell-type-ait-mapping.md` — BrainKB four-pass workflow (index + extract → lexical verification → SKOS mapping to Allen Institute (AIT) cell type taxonomies → entity cards with marker-gene diff), emitting a fixed set of CSV tables plus `run_report.md`.
 
 ### `schemas/`
 - `ner-output.schema.json` — JSON Schema for NER output. **Task-agnostic — keep it that way**; cell-specific constraints live in the two files below.
