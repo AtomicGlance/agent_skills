@@ -51,12 +51,6 @@ for every entity type:
 
 ### 1b. Retrieve supplementary and deposited material
 
-If the `allen-taxonomy-pretriage` skill is available, run it first and reuse its record
-rather than re-deriving it: its `scan_species()` split (experimental vs reagent-host vs
-citation-only) seeds `species_role`, its referenced taxonomies seed `sources.csv` and
-the author-statement basis in Pass 3, and its taxonomy shortlist uses the same catalog
-and scoring as `scripts/ait_taxonomy.py`.
-
 Before extracting, check for a taxonomy or cell type table published alongside the paper.
 Look in this order and record what you find in `sources.csv`:
 
@@ -211,8 +205,8 @@ match within it using label, marker genes, and hierarchy level.
 ### Available AIT taxonomies
 
 Do not keep a list of taxonomies in this prompt. The list has one maintained home,
-`data/allen_taxonomies.json` (a dated snapshot of the brain-map.org taxonomy index,
-shared with the `allen-taxonomy-pretriage` skill), and is read with code:
+`data/allen_taxonomies.json` (a dated snapshot of the brain-map.org taxonomy index),
+and is read with code:
 
 ```bash
 python -m scripts.ait_taxonomy list
@@ -224,8 +218,9 @@ The ranking is a shortlist to adjudicate, not a decision. If no taxonomy in the 
 covers the paper's experimental species and region, record `skos_relation = none` with
 that reason. Do not force the nearest taxonomy: a silent `closeMatch` to the wrong
 taxonomy is worse than a visible failure. Write `ait_id` as the taxonomy's AIT accession
-when the catalog has one, otherwise its CCN, otherwise its `taxonomy_name`; this is the
-`ait_id` that `rank` prints. If the snapshot looks stale (a taxonomy the paper names is
+when the catalog has one (for a multi-species taxonomy, the number for the experimental
+species), otherwise its CCN, otherwise its `taxonomy_name`; this is the `ait_id` that
+`rank` prints. If the snapshot looks stale (a taxonomy the paper names is
 missing), say so in `run_report.md` instead of inventing an ID.
 
 ### Use SKOS match relations, with `match_confidence` derived from them
@@ -450,8 +445,6 @@ used; the `validate` result; and every assumption you made that a curator should
   picks the taxonomy (Pass 3).
 - **AIT taxonomy reader** — look up candidate nodes by label, region, or markers, and
   retrieve the marker gene set needed for the Pass 4 diff.
-- **allen-taxonomy-pretriage** skill, when available — species roles and referenced
-  taxonomies for Pass 1b.
 - **Deterministic stages** — `scripts/ait_evidence.py` (Pass 2a), `scripts/ait_tables.py`
   (derive / review sheet / validate), `scripts/ait_gene_diff.py` (Pass 4). Run them; do
   not reproduce their output by hand.

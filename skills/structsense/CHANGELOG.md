@@ -19,8 +19,8 @@ The steps that must not be model judgement are scripts:
 - **`scripts/ait_taxonomy.py` + `data/allen_taxonomies.json`.** The prompt's
   hardcoded table listed 8 of the 14 taxonomies, which forced a SEA-AD or
   whole-human-brain paper onto AIT105/AIT15.3 as a confident `closeMatch`. That
-  list now lives in one place: a dated snapshot shared with the
-  `allen-taxonomy-pretriage` skill, ranked the same way.
+  list now lives in one place: a dated snapshot of the brain-map.org taxonomy
+  index, with per-species AIT numbers for the multi-species taxonomies.
 - **`scripts/ait_tables.py`** holds the column contract
   (`schemas/ait-mapping-columns.json`, 147 columns). `derive` fills
   `match_confidence` from `skos_relation` and copies the crosswalk columns.

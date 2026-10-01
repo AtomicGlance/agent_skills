@@ -2,15 +2,16 @@
 
 `prompts/extractor-cell-type-ait-mapping.md` Pass 3 picks a taxonomy from species,
 brain region and assay. The list of taxonomies lives in ONE place —
-`data/allen_taxonomies.json`, a dated snapshot of the brain-map.org taxonomy index
-copied from the `allen-taxonomy-pretriage` skill — and is never restated in a prompt.
+`data/allen_taxonomies.json`, a dated snapshot of the brain-map.org taxonomy index —
+and is never restated in a prompt.
 A hardcoded table in the prompt used to list 8 of the 14 taxonomies, so a SEA-AD or
 whole-human-brain paper was forced onto AIT105/AIT15.3 and recorded as a confident
 closeMatch: a silent wrong mapping instead of a visible failure.
 
-`ait_id` in `mappings.csv` is the taxonomy's AIT accession when the catalog has one,
-otherwise its CCN, otherwise its `taxonomy_name` — `identifiers()` returns all three
-so the table validator can accept any of them.
+`ait_id` in `mappings.csv` is the taxonomy's AIT number when the catalog has one —
+the per-species number for a multi-species taxonomy (`ait_ids_by_species`) — otherwise
+its CCN, otherwise its `taxonomy_name`. `identifiers()` returns all of them so the
+table validator can accept any.
 
     python -m scripts.ait_taxonomy list
     python -m scripts.ait_taxonomy rank --species human --region "middle temporal gyrus"
@@ -48,8 +49,12 @@ def identifiers(entry: dict) -> List[str]:
     return ids
 
 
-def preferred_id(entry: dict) -> str:
-    """The value to write into `mappings.ait_id`: AIT accession > CCN > taxonomy_name."""
+def preferred_id(entry: dict, species: Optional[str] = None) -> str:
+    """The value to write into `mappings.ait_id`: the AIT number for `species` when the
+    taxonomy has per-species numbers, else AIT number > CCN > taxonomy_name."""
+    by_species = entry.get("ait_ids_by_species") or {}
+    if species and species.lower() in by_species:
+        return by_species[species.lower()]
     return identifiers(entry)[0]
 
 
@@ -66,7 +71,6 @@ def rank(species: Sequence[str], regions: Sequence[str], *, path: Optional[Path]
          top_n: int = 5) -> List[dict]:
     """Score catalog entries against a paper's species and regions.
 
-    Same scoring as the pretriage skill's `rank_allen_taxonomies()`, so the two agree:
     `species[0]` is the primary experimental species (+8 when the taxonomy covers it),
     +3 per matched region (max 3), +2 per further matched species, +1 each for
     whole-brain coverage and MapMyCells availability when any species matched.
@@ -87,7 +91,7 @@ def rank(species: Sequence[str], regions: Sequence[str], *, path: Optional[Path]
             score += 1
         if matched_sp and t.get("mapmycells"):
             score += 1
-        ranked.append({"ait_id": preferred_id(t), "title": t["title"],
+        ranked.append({"ait_id": preferred_id(t, primary), "title": t["title"],
                        "taxonomy_name": t["taxonomy_name"], "ccn": t["ccn"], "score": score,
                        "species_match": matched_sp, "region_match": matched_rg,
                        "hierarchy": t["hierarchy"], "publication": t["publication"]})

@@ -124,6 +124,17 @@ class TaxonomyCatalog(unittest.TestCase):
         self.assertIn("AIT31", [r["ait_id"] for r in top])
         self.assertTrue(all("human" in r["species_match"] for r in top))
 
+    def test_multi_species_taxonomy_reports_the_experimental_species_number(self):
+        top = {r["title"]: r["ait_id"] for r in tax.rank(["macaque"], ["putamen"], top_n=14)}
+        bg = next(t for t in top if "Basal Ganglia" in t)
+        self.assertEqual(top[bg], "AIT11.9")
+        self.assertEqual(tax.find("AIT104")["taxonomy_name"], "20181231_Adult_CrossSpecies_LGN_SMARTseq")
+
+    def test_regions_are_anatomical_only(self):
+        for t in tax.taxonomies():
+            for r in t["regions"]:
+                self.assertNotRegex(r.lower(), r"alzheimer|aging|development|embryonic|postnatal", t["title"])
+
     def test_species_coverage(self):
         self.assertTrue(tax.species_covered("AIT15.3", "human"))
         self.assertFalse(tax.species_covered("AIT15.3", "mouse"))

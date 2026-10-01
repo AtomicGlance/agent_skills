@@ -1,7 +1,11 @@
 {
   "source": "https://brain-map.org/our-research/cell-types-taxonomies/taxonomies-index + https://brain-map.org/bkp/analyze/mapmycells/taxonomies",
-  "snapshot_date": "2026-09-24",
-  "copied_from": "allen-taxonomy-pretriage skill (allen_taxonomies.json); ait_ids added here, parsed from each title",
+  "snapshot_date": "2026-10-01",
+  "notes": [
+    "ait_ids are the Allen Institute Taxonomy numbers shown on each taxonomy's brain-map.org page; ait_ids_by_species gives the per-species number for multi-species taxonomies.",
+    "regions holds anatomical terms only (scripts/ait_taxonomy.py matches them against a paper's regions); cohort or developmental scope goes in context.",
+    "Not re-confirmed against brain-map.org on the snapshot date: the AIT106 number for the Whole Human Brain taxonomy, the CCNs of the Aging Mouse Brain and Comparative LGN taxonomies (null), and the per-entry mapmycells flags other than AIT21, AIT31, AIT33, AIT106, the basal ganglia, SEA-AD multiregion and developing visual cortex taxonomies."
+  ],
   "taxonomies": [
     {
       "ait_ids": [
@@ -46,9 +50,9 @@
       "regions": [
         "whole brain"
       ],
-      "hierarchy": "Integrated consensus of Allen Institute + Broad Institute whole mouse brain taxonomies",
+      "hierarchy": "9 neighborhoods / 43 classes / 414 subclasses / 1,386 supertypes / 6,721 clusters; integrates the Allen Institute scRNA-seq (AIT21) and Broad Institute snRNA-seq whole mouse brain taxonomies",
       "publication": "Allen Institute / BICCN consensus release (2025)",
-      "mapmycells": false
+      "mapmycells": true
     },
     {
       "ait_ids": [],
@@ -62,11 +66,13 @@
         "whole brain",
         "forebrain",
         "midbrain",
-        "hindbrain",
-        "aging"
+        "hindbrain"
       ],
-      "hierarchy": "~1.2M cells, 847 clusters; mapped onto WMB class/subclass/supertype",
-      "publication": "Jin et al. 2025 (brain-wide ageing signatures)",
+      "context": [
+        "aging: young adult (2 months) vs aged (18 months), both sexes"
+      ],
+      "hierarchy": "~1.2M scRNA-seq cells, 847 clusters (at least 14 age-biased, mostly glial); mapped onto WMB class/subclass/supertype",
+      "publication": "Jin K., Yao Z., van Velthoven C.T.J. et al., Nature 638:182-196 (2025) doi:10.1038/s41586-024-08350-8",
       "mapmycells": false
     },
     {
@@ -79,13 +85,13 @@
       ],
       "regions": [
         "visual cortex",
-        "VISp",
-        "development",
-        "embryonic",
-        "postnatal"
+        "VISp"
+      ],
+      "context": [
+        "development: E11.5 to P56, 53 donors, wild-type C57BL/6J"
       ],
       "hierarchy": "568,654 cells; 15 classes / 40 subclasses / 148 clusters / 714 subclusters",
-      "publication": "Continuous cell type diversification in mouse visual cortex development",
+      "publication": "A high-resolution transcriptomic and epigenomic cell-type atlas of the developing mouse visual cortex",
       "mapmycells": true
     },
     {
@@ -104,7 +110,7 @@
         "hippocampal formation",
         "hippocampus"
       ],
-      "hierarchy": "SMART-seq whole cortex + hippocampus taxonomy",
+      "hierarchy": "388 transcriptomic types (364 neuronal) from ~1.3M cells profiled with 10x and SMART-seq",
       "publication": "Yao Z. et al., Cell 184:3222-3241 (2021)",
       "mapmycells": false
     },
@@ -135,6 +141,11 @@
         "AIT11.9",
         "AIT101"
       ],
+      "ait_ids_by_species": {
+        "human": "AIT19.5",
+        "macaque": "AIT11.9",
+        "marmoset": "AIT101"
+      },
       "title": "Cross-Species (Consensus) Basal Ganglia Taxonomy (AIT19.5 / 11.9 / 101)",
       "taxonomy_name": "08072025_HMBA-BICAN_CrossSpecies_BasalGanglia_10XMultiome",
       "ccn": "CCN20250428",
@@ -157,7 +168,7 @@
         "substantia nigra"
       ],
       "hierarchy": ">2M nuclei, 10x multiome + ATAC + spatial + morphology/ephys; ~60 homologous types aligned to mouse and human whole-brain atlases; refined MSN/GABAergic taxonomy",
-      "publication": "Johansen N.J., Fu Y., Schmitz M. et al., Cross-species consensus atlas of primate basal ganglia, bioRxiv (2026)",
+      "publication": "Johansen N.J., Fu Y., Schmitz M. et al., Cross-species consensus atlas of the primate basal ganglia, bioRxiv (2025) doi:10.64898/2025.12.15.694496",
       "mapmycells": true
     },
     {
@@ -192,7 +203,10 @@
         "MTG",
         "cortex"
       ],
-      "hierarchy": "~1.4M QC'd nuclei, 84 aged donors; 3 classes / 24 subclasses / 139 supertypes; Alzheimer's cohort",
+      "context": [
+        "Alzheimer's disease: aged cohort spanning the AD spectrum"
+      ],
+      "hierarchy": "~1.4M QC'd nuclei (~2.0M profiled), 84 aged donors; 3 classes / 24 subclasses / 139 supertypes",
       "publication": "Gabitto M.I. & Travaglini K.J. et al., Nat Neurosci (2024) doi:10.1038/s41593-024-01774-5",
       "mapmycells": true
     },
@@ -207,10 +221,26 @@
       "regions": [
         "middle temporal gyrus",
         "MTG",
-        "multiple cortical regions",
-        "Alzheimer's disease"
+        "prefrontal cortex",
+        "PFC",
+        "medial entorhinal cortex",
+        "MEC",
+        "lateral entorhinal cortex",
+        "LEC",
+        "hippocampus",
+        "inferior temporal gyrus",
+        "ITG",
+        "superior temporal gyrus",
+        "STG",
+        "frontoinsula",
+        "angular gyrus",
+        "primary visual cortex",
+        "V1"
       ],
-      "hierarchy": "Extension of the SEA-AD MTG taxonomy to additional brain regions and cell types",
+      "context": [
+        "Alzheimer's disease: spans the full arc of AD staging"
+      ],
+      "hierarchy": "~7M nuclei (snRNA-seq, snATAC-seq, Multiome) from 84 donors across 10 neo- and allocortical regions (MEC, MTG, PFC/A9 in all 84; HIP, LEC, ITG, STG, FI, AnG, V1C in 43); 3 classes / 28 subclasses / 207 supertypes, retaining the SEA-AD MTG types",
       "publication": "SEA-AD consortium",
       "mapmycells": true
     },
@@ -227,9 +257,15 @@
       "regions": [
         "neocortex",
         "multiple cortical areas",
-        "cortex"
+        "cortex",
+        "middle temporal gyrus",
+        "anterior cingulate cortex",
+        "primary visual cortex",
+        "primary motor cortex",
+        "primary somatosensory cortex",
+        "primary auditory cortex"
       ],
-      "hierarchy": "SMART-seq across multiple human cortical areas",
+      "hierarchy": "49,495 SMART-seq nuclei across MTG, ACC, V1C, M1C, S1C, A1C; 24 consistent subclasses",
       "publication": "Jorstad N.L. et al., Science 382 (2023) doi:10.1126/science.adf6812",
       "mapmycells": false
     },
@@ -248,7 +284,7 @@
         "MTG",
         "cortex"
       ],
-      "hierarchy": "15,928 nuclei, 8 donors",
+      "hierarchy": "15,928 nuclei, 8 donors; 75 transcriptomic cell types",
       "publication": "Hodge R.D., Bakken T.E. et al., Nature 573:61-68 (2019)",
       "mapmycells": false
     },
@@ -256,7 +292,7 @@
       "ait_ids": [],
       "title": "Mammalian Primary Motor Cortex Taxonomy (BICCN M1)",
       "taxonomy_name": "BICCN_M1_cross_species",
-      "ccn": "CCN202002270 (cross-species); CCN201912131 (human); CCN201912132 (marmoset)",
+      "ccn": "CCN202002270 (cross-species); CCN201912131 (human); CCN201912132 (marmoset); CCN202002013 (mouse)",
       "species": [
         "human",
         "marmoset",
@@ -277,6 +313,11 @@
         "AIT103",
         "AIT104"
       ],
+      "ait_ids_by_species": {
+        "human": "AIT102",
+        "macaque": "AIT103",
+        "mouse": "AIT104"
+      },
       "title": "Comparative Lateral Geniculate Nucleus Taxonomy (AIT102/103/104)",
       "taxonomy_name": "20181231_Adult_CrossSpecies_LGN_SMARTseq",
       "ccn": null,
@@ -291,7 +332,7 @@
         "thalamus",
         "visual thalamus"
       ],
-      "hierarchy": "Cross-species SMART-seq LGN taxonomy",
+      "hierarchy": "Cross-species SMART-seq dLGN taxonomy; 1,209 human nuclei, 2,157 macaque nuclei, 2,190 mouse cells",
       "publication": "Bakken T.E., van Velthoven C., Menon V. et al., eLife 10:e64875 (2021)",
       "mapmycells": false
     }
