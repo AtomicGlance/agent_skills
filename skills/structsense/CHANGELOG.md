@@ -2,7 +2,7 @@
 
 ## 0.9.0 — Cell types to Allen (AIT) taxonomies, with the trust steps in code
 
-New mode for BrainKB: `prompts/extractor-cell-type-ait-mapping.md` extracts a
+New mode: `prompts/extractor-cell-type-ait-mapping.md` extracts a
 paper's cell types, genes, species, regions and assay metadata and maps them to
 Allen Institute cell type taxonomies. The paper is the node; every mapping is a
 reversible SKOS edge keyed on `mention_id` and `ait_node_id`, so going from a

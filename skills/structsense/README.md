@@ -42,7 +42,7 @@ structsense/
 │   ├── extractor-ner-neuroscience.md      ← BrainRegion / Gene / Protein / Drug / Method / …
 │   ├── extractor-ner-cns-cells.md         ← CellType / CellSubtype / LineageMarker / Ephys / …
 │   ├── extractor-abcd.md                  ← ABCD/HBCD variables / constructs / models / findings
-│   ├── extractor-cell-type-ait-mapping.md ← cell types → AIT taxonomy (BrainKB, SKOS edges)
+│   ├── extractor-cell-type-ait-mapping.md ← cell types → AIT taxonomy (SKOS edges)
 │   ├── mask-recall-pass.md                ← pass-2: catch mentions pass-1 missed
 │   ├── mask-verify-pass.md                ← per-item cloze label check
 │   ├── extractor-resource.md              ← Model / Dataset / Tool / Benchmark / …
@@ -149,7 +149,7 @@ It's **idempotent** — safe to run on already-canonical files. It also runs aut
 | Entities + key terms from general text | `prompts/extractor-ner-general.md` |
 | Entities + key terms from neuroscience text | `prompts/extractor-ner-neuroscience.md` |
 | CNS cell-typing extraction (atlases, patch-seq, scRNA-seq) | `prompts/extractor-ner-cns-cells.md` |
-| Map a paper's cell types to Allen Institute (AIT) taxonomies for BrainKB | `prompts/extractor-cell-type-ait-mapping.md` |
+| Map a paper's cell types to Allen Institute (AIT) taxonomies | `prompts/extractor-cell-type-ait-mapping.md` |
 | Pull tools / datasets / models / benchmarks from a paper | `prompts/extractor-resource.md` |
 | Convert a PDF to a target JSON schema (e.g. ReproSchema) | `prompts/extractor-structured.md` |
 
