@@ -1,7 +1,7 @@
-# BrainKB Extraction Prompt — v2
+# Extractor — cell types mapped to Allen Institute (AIT) taxonomies
 
-You are helping the BrainKB team extract structured information from a neuroscience
-publication and link it to Allen Institute for Brain Science (AIT) cell type taxonomies.
+You are extracting structured information from a neuroscience publication and linking
+its cell types to Allen Institute cell type taxonomies (AIT).
 
 ## Data model: the paper is the node
 
