@@ -154,7 +154,7 @@ Write the result to `evidence_verified` using this vocabulary:
 
 Any entity whose only evidence is `not_found` is **quarantined**: it stays in the output
 with `extraction_flag = unverified_evidence` and must not be promoted to a mapping edge
-or written to BrainKB. Report the count of quarantined entities; a non-trivial rate is a
+or written to the target knowledge graph. Report the count of quarantined entities; a non-trivial rate is a
 signal that the extraction step is paraphrasing and the prompt needs tightening.
 
 `fuzzy` evidence may support a mapping edge, but it is flagged: it never appears in
@@ -331,9 +331,10 @@ python -m scripts.ait_tables init out/            # header-only files
 python -m scripts.ait_tables derive out/          # match_confidence + crosswalk copies
 python -m scripts.ait_gene_diff out/ --markers markers.json --namespace MGI
 python -m scripts.ait_tables review-sheet out/    # the deterministic join
-python -m scripts.ait_tables validate out/        # must exit 0 before anything reaches BrainKB
-``` Use UTF-8,
-comma-separated, quote all fields, `\n` line endings. Empty means not applicable; `NA`
+python -m scripts.ait_tables validate out/        # must exit 0 before anything reaches the knowledge graph
+```
+
+Use UTF-8, comma-separated, quote all fields, `\n` line endings. Empty means not applicable; `NA`
 means looked for and not found — the distinction matters downstream. Multi-valued fields
 are pipe-delimited (`|`) with no surrounding spaces. Booleans are lowercase
 `true`/`false`. Dates are ISO 8601.
@@ -437,10 +438,11 @@ used; the `validate` result; and every assumption you made that a curator should
 
 ## Tools
 
-- **BrainKB knowledge graph** — query this *first*. If the paper, or an entity with the
-  same label and species, has already been extracted, retrieve the stored record instead
-  of re-deriving it, and extend rather than duplicate. Reusing stored BrainKB facts in
-  place of re-reading source text is the intended steady state.
+- **Target knowledge graph** (where the results are stored) — query this *first*, when
+  one is available. If the paper, or an entity with the same label and species, has
+  already been extracted, retrieve the stored record instead of re-deriving it, and
+  extend rather than duplicate. Reusing stored facts in place of re-reading source text
+  is the intended steady state.
 - **AIT taxonomy catalog** — `scripts/ait_taxonomy.py` over `data/allen_taxonomies.json`
   picks the taxonomy (Pass 3).
 - **AIT taxonomy reader** — look up candidate nodes by label, region, or markers, and
