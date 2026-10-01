@@ -211,7 +211,7 @@ and is read with code:
 ```bash
 python -m scripts.ait_taxonomy list
 python -m scripts.ait_taxonomy rank --species human --region "middle temporal gyrus"   # first --species = primary experimental species
-python -m scripts.ait_taxonomy show AIT31
+python -m scripts.ait_taxonomy show AIT15.3
 ```
 
 The ranking is a shortlist to adjudicate, not a decision. If no taxonomy in the snapshot

@@ -3,10 +3,9 @@
 `prompts/extractor-cell-type-ait-mapping.md` Pass 3 picks a taxonomy from species,
 brain region and assay. The list of taxonomies lives in ONE place —
 `data/allen_taxonomies.json`, a dated snapshot of the brain-map.org taxonomy index —
-and is never restated in a prompt.
-A hardcoded table in the prompt used to list 8 of the 14 taxonomies, so a SEA-AD or
-whole-human-brain paper was forced onto AIT105/AIT15.3 and recorded as a confident
-closeMatch: a silent wrong mapping instead of a visible failure.
+and is never restated in a prompt. It holds eight taxonomies on purpose; a paper none
+of them covers gets `skos_relation = none`, never a forced closeMatch to the nearest
+one.
 
 `ait_id` in `mappings.csv` is the taxonomy's AIT number when the catalog has one —
 the per-species number for a multi-species taxonomy (`ait_ids_by_species`) — otherwise
@@ -15,7 +14,7 @@ table validator can accept any.
 
     python -m scripts.ait_taxonomy list
     python -m scripts.ait_taxonomy rank --species human --region "middle temporal gyrus"
-    python -m scripts.ait_taxonomy show AIT31
+    python -m scripts.ait_taxonomy show AIT15.3
 """
 from __future__ import annotations
 

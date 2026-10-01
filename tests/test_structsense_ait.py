@@ -74,7 +74,7 @@ def fixture_tables() -> dict:
                 "evidence_chunk_id": "c2", "run_id": "r1"}]
     mappings = [
         {"paper_id": PAPER, "mention_id": f"{PAPER}:M001", "ait_taxonomy_used": "Whole Mouse Brain",
-         "ait_id": "AIT21", "ait_cell_type_label": "Sst Chodl", "ait_hierarchy_level": "subclass",
+         "ait_id": "AIT33", "ait_cell_type_label": "Sst Chodl", "ait_hierarchy_level": "subclass",
          "basis_for_match": "label_exact|marker_genes|species", "mapping_id": "MAP1",
          "ait_node_id": "CS20230722_SUBC_0053", "skos_relation": "skos:broadMatch",
          "mapping_evidence": "Sst, Chodl, Nos1", "mapped_by": "llm",
@@ -112,20 +112,23 @@ def run_pipeline(out: Path) -> None:
 
 
 class TaxonomyCatalog(unittest.TestCase):
-    def test_catalog_has_all_fourteen(self):
-        self.assertEqual(len(tax.taxonomies()), 14)
+    def test_catalog_is_the_eight_supported_taxonomies(self):
+        ids = sorted(tax.preferred_id(t) for t in tax.taxonomies())
+        self.assertEqual(ids, sorted(["AIT33", "AIT19.5", "AIT15.3", "AIT102", "CCN202002270",
+                                      "AIT105", "AIT2.1.1", "AIT5.1"]))
+        for t in tax.taxonomies():
+            self.assertTrue(t["url"].startswith("https://brain-map.org/our-research/cell-type-taxonomies/"))
+            self.assertNotIn("?", t["url"])
+        for ident in ("AIT106", "AIT31", "AIT21"):
+            self.assertIsNone(tax.find(ident), ident)
 
-    def test_previously_missing_taxonomies_resolve(self):
-        for ident in ("AIT106", "AIT31", "AIT21", "CCN20260630", "20241130_Aging_Mouse_WholeBrain_10X"):
-            self.assertIsNotNone(tax.find(ident), ident)
-
-    def test_rank_prefers_sea_ad_for_human_mtg(self):
+    def test_rank_prefers_mtg_for_human_mtg(self):
         top = tax.rank(["human"], ["middle temporal gyrus", "MTG"], top_n=3)
-        self.assertIn("AIT31", [r["ait_id"] for r in top])
+        self.assertEqual(top[0]["ait_id"], "AIT15.3")
         self.assertTrue(all("human" in r["species_match"] for r in top))
 
     def test_multi_species_taxonomy_reports_the_experimental_species_number(self):
-        top = {r["title"]: r["ait_id"] for r in tax.rank(["macaque"], ["putamen"], top_n=14)}
+        top = {r["title"]: r["ait_id"] for r in tax.rank(["macaque"], ["putamen"], top_n=8)}
         bg = next(t for t in top if "Basal Ganglia" in t)
         self.assertEqual(top[bg], "AIT11.9")
         self.assertEqual(tax.find("AIT104")["taxonomy_name"], "20181231_Adult_CrossSpecies_LGN_SMARTseq")
@@ -279,7 +282,7 @@ class TablesContract(unittest.TestCase):
         def mutate(d):
             m = d["mappings.csv"][1]
             m.update(skos_relation="skos:relatedMatch", match_confidence="partial",
-                     ait_node_id="CS_X", ait_cell_type_label="X", ait_id="AIT21", no_match_reason="")
+                     ait_node_id="CS_X", ait_cell_type_label="X", ait_id="AIT33", no_match_reason="")
         self.assertTrue(any("quarantined" in m for m in self._validate_with(mutate)))
 
     def test_exact_match_requires_same_taxonomy_basis(self):

@@ -17,10 +17,10 @@ The steps that must not be model judgement are scripts:
   quarantined and can never become an edge. `fuzzy` evidence can still support an
   edge, but stays out of the review sheet and is reported separately.
 - **`scripts/ait_taxonomy.py` + `data/allen_taxonomies.json`.** The prompt's
-  hardcoded table listed 8 of the 14 taxonomies, which forced a SEA-AD or
-  whole-human-brain paper onto AIT105/AIT15.3 as a confident `closeMatch`. That
-  list now lives in one place: a dated snapshot of the brain-map.org taxonomy
-  index, with per-species AIT numbers for the multi-species taxonomies.
+  hardcoded taxonomy table moved into one data file: the eight supported Allen
+  taxonomies, each with its brain-map.org page, CCN, species, regions and
+  per-species AIT numbers for the multi-species ones. A paper none of them covers
+  is recorded as `none`, never forced onto the nearest taxonomy.
 - **`scripts/ait_tables.py`** holds the column contract
   (`schemas/ait-mapping-columns.json`, 147 columns). `derive` fills
   `match_confidence` from `skos_relation` and copies the crosswalk columns.

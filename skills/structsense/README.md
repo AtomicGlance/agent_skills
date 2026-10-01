@@ -104,7 +104,7 @@ structsense/
 ├── data/
 │   ├── dictionaries/        ← bundled ABCD/HBCD dictionaries, all 7 releases,
 │   │                          539,781 variables in 8.6 MB gzipped (self-contained)
-│   └── allen_taxonomies.json ← dated snapshot of the 14 Allen (AIT) cell type taxonomies
+│   └── allen_taxonomies.json ← the 8 supported Allen (AIT) cell type taxonomies
 ├── requirements.txt         ← core deps; -llm / -ner / -dev for the optional paths
 └── examples/                ← worked end-to-end examples
     ├── ner-example.md
